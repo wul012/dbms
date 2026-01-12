@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "expectedVersion": "2026-01-12T09:46:05.937Z",
-  "lastModified": "2026-01-12T09:50:29.807Z",
+  "forceWrite": true,
+  "lastModified": "2026-01-12T09:59:10.677Z",
   "databases": {
     "school": {
       "tables": {
@@ -584,6 +584,56 @@
               "name": "提交测试",
               "age": 60,
               "email": "commit@test.com"
+            },
+            {
+              "id": 6,
+              "name": "张三",
+              "age": 25
+            },
+            {
+              "id": 7,
+              "name": "张三",
+              "age": 25
+            },
+            {
+              "id": 8,
+              "name": "张三",
+              "age": 25
+            },
+            {
+              "id": 9,
+              "name": "张三",
+              "age": 25
+            },
+            {
+              "id": 10,
+              "name": "乐观锁测试",
+              "age": 99,
+              "email": "lock@test.com"
+            },
+            {
+              "id": 11,
+              "name": "乐观锁测试",
+              "age": 99,
+              "email": "lock@test.com"
+            },
+            {
+              "id": 12,
+              "name": "乐观锁测试",
+              "age": 99,
+              "email": "lock@test.com"
+            },
+            {
+              "id": 13,
+              "name": "乐观锁测试",
+              "age": 99,
+              "email": "lock@test.com"
+            },
+            {
+              "id": 14,
+              "name": "乐观锁测试",
+              "age": 99,
+              "email": "lock@test.com"
             }
           ]
         },
