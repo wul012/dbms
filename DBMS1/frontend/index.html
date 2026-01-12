@@ -109,6 +109,7 @@
                 <input type="file" id="import-file" accept=".json" onchange="importFromFile(event)" style="display:none">
             </div>
             <div class="toolbar-group">
+                <button class="btn btn-sm" onclick="showERDiagram()">📊 ER图</button>
                 <button class="btn btn-sm btn-secondary" onclick="toggleHelp()">📖 SQL帮助</button>
                 <button class="btn btn-sm btn-danger" onclick="clearAllData()">🗑️ 清空数据</button>
             </div>
@@ -117,6 +118,18 @@
         <div class="main-layout">
             <!-- 左侧边栏 -->
             <div class="sidebar">
+                <!-- 数据统计卡片 -->
+                <div id="stats-card" style="background:linear-gradient(135deg,#0066cc,#004494);color:#fff;padding:12px;border-radius:8px;margin-bottom:12px;font-size:11px">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                        <span>📊 数据库</span><strong id="stat-db">0</strong>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                        <span>📋 数据表</span><strong id="stat-table">0</strong>
+                    </div>
+                    <div style="display:flex;justify-content:space-between">
+                        <span>📝 总记录</span><strong id="stat-rows">0</strong>
+                    </div>
+                </div>
                 <h3>📁 数据库 <button class="btn btn-xs btn-secondary" onclick="showModal('create-db-modal')">+</button></h3>
                 <div id="db-list"></div>
                 <h3 style="margin-top:15px">📋 数据表 <button class="btn btn-xs btn-secondary" onclick="showModal('create-table-modal')">+</button></h3>
@@ -179,7 +192,10 @@
                 <div class="panel result-container">
                     <div class="panel-header">
                         <h3>📊 执行结果</h3>
-                        <span id="result-info" style="color:#888;font-size:11px"></span>
+                        <div style="display:flex;align-items:center;gap:10px">
+                            <span id="result-info" style="color:#888;font-size:11px"></span>
+                            <button id="export-csv-btn" class="btn btn-xs btn-secondary" onclick="exportResultToCSV()" style="display:none">📥 导出CSV</button>
+                        </div>
                     </div>
                     <div id="result-area"><div class="empty-state">执行 SQL 语句后，结果将显示在这里</div></div>
                 </div>
@@ -261,6 +277,17 @@
                 <button class="btn btn-danger" onclick="deleteCurrentTable()">删除表</button>
                 <button class="btn" onclick="saveTableChanges()">保存修改</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ER图模态框 -->
+    <div id="er-modal" class="modal-overlay">
+        <div class="modal" style="max-width:95vw;width:900px;height:85vh;display:flex;flex-direction:column;padding:0">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #dee2e6;background:#f8f9fa;border-radius:10px 10px 0 0">
+                <h3 style="margin:0;color:#0066cc">📊 数据库 ER 图</h3>
+                <button class="btn btn-sm btn-secondary" onclick="closeModal('er-modal')" style="font-size:16px;padding:4px 10px">✕</button>
+            </div>
+            <div id="er-container" style="flex:1;overflow:auto;padding:20px;background:#f8f9fa"></div>
         </div>
     </div>
 
@@ -371,6 +398,18 @@
             const size = new Blob([JSON.stringify(databases)]).size;
             const fileStatus = fileHandle ? ` | 📁 ${fileHandle.name}` : '';
             document.getElementById('storage-info').textContent = `存储: ${(size/1024).toFixed(1)}KB${fileStatus}`;
+            
+            // 更新统计卡片
+            const dbCount = Object.keys(databases).length;
+            let tableCount = 0, rowCount = 0;
+            for (const db of Object.values(databases)) {
+                const tables = Object.values(db.tables || {});
+                tableCount += tables.length;
+                for (const t of tables) rowCount += (t.data || []).length;
+            }
+            document.getElementById('stat-db').textContent = dbCount;
+            document.getElementById('stat-table').textContent = tableCount;
+            document.getElementById('stat-rows').textContent = rowCount;
         }
 
         // ==================== UI 渲染 ====================
@@ -422,7 +461,7 @@
         }
 
         function quickSelectTable(tableName) {
-            document.getElementById('sql-editor').value = `SELECT * FROM ${tableName};`;
+            document.getElementById('sql-editor').value = `SELECT * FROM ${tableName} LIMIT 50;`;
             executeSQL();
         }
 
@@ -747,6 +786,197 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 renderTableList();
                 showResult('所有数据已清空', 'success');
             }
+        }
+
+        // ==================== ER图可视化 ====================
+        function showERDiagram() {
+            if (!currentDatabase) {
+                alert('请先选择一个数据库');
+                return;
+            }
+            const tables = databases[currentDatabase].tables;
+            if (!tables || Object.keys(tables).length === 0) {
+                alert('当前数据库没有表');
+                return;
+            }
+            
+            const container = document.getElementById('er-container');
+            container.innerHTML = generateERDiagram(tables);
+            showModal('er-modal');
+        }
+        
+        function generateERDiagram(tables) {
+            const tableNames = Object.keys(tables);
+            const tableCount = tableNames.length;
+            
+            // 分析外键关系，记录字段索引
+            const relations = [];
+            for (const [tableName, table] of Object.entries(tables)) {
+                table.columns.forEach((col, colIdx) => {
+                    if (col.name.endsWith('_id') && !col.primaryKey) {
+                        // 查找被引用的表（支持多种命名格式）
+                        const baseName = col.name.replace('_id', '');
+                        let refTableName = null;
+                        // 尝试多种匹配：student_id -> students, class_id -> classes
+                        const candidates = [
+                            baseName + 's',           // student -> students
+                            baseName + 'es',          // class -> classes
+                            baseName,                 // 原名
+                            baseName.replace(/y$/, 'ies') // category -> categories
+                        ];
+                        for (const candidate of candidates) {
+                            if (tables[candidate]) {
+                                refTableName = candidate;
+                                break;
+                            }
+                        }
+                        
+                        if (refTableName) {
+                            const refTable = tables[refTableName];
+                            const pkIdx = refTable.columns.findIndex(c => c.primaryKey || c.name === 'id');
+                            relations.push({
+                                fromTable: tableName,
+                                fromCol: col.name,
+                                fromColIdx: colIdx,
+                                toTable: refTableName,
+                                toCol: pkIdx >= 0 ? refTable.columns[pkIdx].name : 'id',
+                                toColIdx: pkIdx >= 0 ? pkIdx : 0
+                            });
+                        }
+                    }
+                });
+            }
+            
+            // 计算布局
+            const cardWidth = 200, rowHeight = 26, headerHeight = 42, padding = 8;
+            const gapX = 100, gapY = 40;
+            const cols = Math.min(tableCount, 3);
+            const marginLeft = 20; // 左边距
+            
+            // 计算每个表的高度和位置
+            const tableInfo = {};
+            let idx = 0;
+            for (const [name, table] of Object.entries(tables)) {
+                const height = headerHeight + table.columns.length * rowHeight + padding * 2;
+                const row = Math.floor(idx / cols);
+                const col = idx % cols;
+                tableInfo[name] = {
+                    x: col * (cardWidth + gapX) + marginLeft,
+                    y: row * 260 + 30,
+                    width: cardWidth,
+                    height: height,
+                    columns: table.columns
+                };
+                idx++;
+            }
+            
+            const totalWidth = cols * (cardWidth + gapX) + marginLeft;
+            const totalRows = Math.ceil(tableCount / cols);
+            const totalHeight = totalRows * 260 + 120;
+            
+            // 生成SVG连线 - 从外键字段连接到主键字段
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#f39c12'];
+            let svgContent = `<defs>`;
+            relations.forEach((rel, i) => {
+                svgContent += `<marker id="arrowhead${i}" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="${colors[i % colors.length]}"/></marker>`;
+            });
+            svgContent += `</defs>`;
+            
+            relations.forEach((rel, i) => {
+                const from = tableInfo[rel.fromTable];
+                const to = tableInfo[rel.toTable];
+                if (!from || !to) return;
+                
+                const color = colors[i % colors.length];
+                // 计算字段中心Y坐标
+                const fromY = from.y + headerHeight + rel.fromColIdx * rowHeight + rowHeight / 2 + padding;
+                const toY = to.y + headerHeight + rel.toColIdx * rowHeight + rowHeight / 2 + padding;
+                
+                // 判断连接方向并计算端点
+                let x1, x2, midX;
+                if (from.x > to.x + to.width) {
+                    // from在右边，to在左边
+                    x1 = from.x;
+                    x2 = to.x + to.width;
+                    midX = (x1 + x2) / 2;
+                } else if (to.x > from.x + from.width) {
+                    // from在左边，to在右边
+                    x1 = from.x + from.width;
+                    x2 = to.x;
+                    midX = (x1 + x2) / 2;
+                } else {
+                    // 重叠情况
+                    x1 = from.x + from.width;
+                    x2 = to.x + to.width + 30;
+                    midX = Math.max(x1, x2) + 20;
+                }
+                
+                // 水平-垂直-水平 直角连线
+                svgContent += `<path d="M${x1},${fromY} L${midX},${fromY} L${midX},${toY} L${x2},${toY}" 
+                    fill="none" stroke="${color}" stroke-width="2" marker-end="url(#arrowhead${i})"/>`;
+                // 起点圆点
+                svgContent += `<circle cx="${x1}" cy="${fromY}" r="4" fill="${color}"/>`;
+            });
+            
+            let html = `<div style="display:flex;flex-direction:column;align-items:center">`;
+            html += `<div style="position:relative;width:${totalWidth}px;height:${totalHeight}px">`;
+            
+            // SVG层
+            html += `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10">${svgContent}</svg>`;
+            
+            // 表卡片
+            for (const [tableName, table] of Object.entries(tables)) {
+                const info = tableInfo[tableName];
+                html += `
+                <div style="position:absolute;left:${info.x}px;top:${info.y}px;width:${info.width}px;background:#fff;border:2px solid #0066cc;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.12);z-index:5">
+                    <div style="background:linear-gradient(135deg,#0066cc,#004494);color:#fff;padding:10px 12px;font-weight:bold;border-radius:6px 6px 0 0;text-align:center;height:${headerHeight}px;box-sizing:border-box">
+                        📋 ${tableName} <span style="font-size:10px;opacity:0.7">(${table.data.length})</span>
+                    </div>
+                    <div style="padding:${padding}px">
+                        ${table.columns.map((col, idx) => {
+                            const isPK = col.primaryKey;
+                            const isFK = col.name.endsWith('_id') && !col.primaryKey;
+                            const relColor = isFK ? colors[relations.findIndex(r => r.fromTable === tableName && r.fromCol === col.name) % colors.length] : null;
+                            return `<div style="height:${rowHeight}px;padding:0 6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;font-size:11px;${isFK ? 'background:' + relColor + '10;' : ''}">
+                                <span>
+                                    ${isPK ? '<span style="color:#f39c12">🔑</span>' : ''}
+                                    ${isFK ? '<span style="color:' + relColor + '">🔗</span>' : ''}
+                                    <strong style="${isPK ? 'color:#f39c12' : isFK ? 'color:' + relColor : ''}">${col.name}</strong>
+                                </span>
+                                <span style="color:#888;font-size:10px">${col.size ? col.type + '(' + col.size + ')' : col.type}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>`;
+            }
+            html += `</div>`;
+            
+            // 关系说明
+            if (relations.length > 0) {
+                html += `<div style="margin-top:15px;padding:12px 20px;background:#fff;border:1px solid #dee2e6;border-radius:8px">
+                    <strong style="color:#0066cc">🔗 外键关系:</strong>
+                    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px">
+                        ${relations.map((r, i) => `
+                            <div style="display:flex;align-items:center;padding:6px 12px;background:${colors[i % colors.length]}10;border-radius:4px;font-size:12px">
+                                <span style="color:${colors[i % colors.length]};margin-right:5px">●</span>
+                                <strong>${r.fromTable}</strong>.<span style="color:${colors[i % colors.length]}">${r.fromCol}</span>
+                                <span style="margin:0 8px">→</span>
+                                <strong>${r.toTable}</strong>.<span style="color:#f39c12">${r.toCol}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }
+            
+            // 图例
+            html += `<div style="margin-top:12px;padding:8px 15px;font-size:11px;color:#666;display:flex;gap:20px;align-items:center">
+                <span><span style="color:#f39c12">🔑</span> 主键(PK)</span>
+                <span><span style="color:#3498db">🔗</span> 外键(FK)</span>
+                <span>● ━━━▶ 外键引用</span>
+            </div>`;
+            html += `</div>`;
+            
+            return html;
         }
 
         // ==================== SQL 解析器 ====================
@@ -1146,8 +1376,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 return executeJoinSelect(sql);
             }
             
-            // 解析SELECT（支持聚合函数和GROUP BY）
-            const match = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+GROUP\s+BY\s+([\w,\s]+))?(?:\s+HAVING\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?$/i);
+            // 检查DISTINCT
+            const hasDistinct = /SELECT\s+DISTINCT\s+/i.test(sql);
+            const sqlNorm = sql.replace(/SELECT\s+DISTINCT\s+/i, 'SELECT ');
+            
+            // 解析SELECT（支持聚合函数、GROUP BY、LIMIT OFFSET）
+            const match = sqlNorm.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+GROUP\s+BY\s+([\w,\s]+))?(?:\s+HAVING\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+)(?:\s+OFFSET\s+(\d+))?)?$/i);
             if (!match) throw new Error('SELECT 语法错误');
             
             const selectCols = match[1].trim();
@@ -1158,6 +1392,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const orderBy = match[6];
             const orderDir = match[7] || 'ASC';
             const limit = match[8] ? parseInt(match[8]) : null;
+            const offset = match[9] ? parseInt(match[9]) : 0;
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
@@ -1187,14 +1422,18 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 });
             }
             
-            // LIMIT
-            if (limit) data = data.slice(0, limit);
+            // LIMIT OFFSET 分页
+            if (limit) {
+                data = data.slice(offset, offset + limit);
+            } else if (offset) {
+                data = data.slice(offset);
+            }
             
-            // 选择列（支持DISTINCT）
-            let columns = selectCols === '*' ? table.columns.map(c => c.name) : selectCols.split(',').map(c => c.trim().split('.').pop());
+            // 选择列
+            let columns = selectCols === '*' ? table.columns.map(c => c.name) : selectCols.split(',').map(c => c.trim().split('.').pop().replace(/^DISTINCT\s+/i, ''));
             
             // 投影
-            const projectedData = data.map(row => {
+            let projectedData = data.map(row => {
                 const newRow = {};
                 for (const col of columns) {
                     newRow[col] = row[col] !== undefined ? row[col] : null;
@@ -1202,7 +1441,18 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 return newRow;
             });
             
-            return { type: 'table', columns, data: projectedData, message: `查询到 ${projectedData.length} 行数据` };
+            // DISTINCT 去重
+            if (hasDistinct) {
+                const seen = new Set();
+                projectedData = projectedData.filter(row => {
+                    const key = JSON.stringify(row);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+            }
+            
+            return { type: 'table', columns, data: projectedData, message: `查询到 ${projectedData.length} 行数据${hasDistinct ? ' (已去重)' : ''}` };
         }
 
         // 聚合查询处理
@@ -1412,8 +1662,33 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         function evaluateCondition(row, condition) {
-            // 支持 =, !=, <>, <, >, <=, >=, LIKE
+            // 支持 =, !=, <>, <, >, <=, >=, LIKE, BETWEEN, IN
             let match;
+            
+            // BETWEEN ... AND ...
+            match = condition.match(/(\w+)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)/i);
+            if (match) {
+                const val = row[match[1]];
+                const min = parseValue(match[2].trim());
+                const max = parseValue(match[3].trim());
+                return val >= min && val <= max;
+            }
+            
+            // IN (val1, val2, ...)
+            match = condition.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
+            if (match) {
+                const val = row[match[1]];
+                const values = match[2].split(',').map(v => parseValue(v.trim()));
+                return values.some(v => v == val);
+            }
+            
+            // NOT IN (val1, val2, ...)
+            match = condition.match(/(\w+)\s+NOT\s+IN\s*\(([^)]+)\)/i);
+            if (match) {
+                const val = row[match[1]];
+                const values = match[2].split(',').map(v => parseValue(v.trim()));
+                return !values.some(v => v == val);
+            }
             
             // LIKE
             match = condition.match(/(\w+)\s+LIKE\s+'([^']+)'/i);
@@ -1584,22 +1859,30 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         // ==================== 结果展示 ====================
+        let lastQueryResult = null; // 存储最后查询结果用于导出
+        
         function displayResult(result) {
             const area = document.getElementById('result-area');
             const info = document.getElementById('result-info');
+            const exportBtn = document.getElementById('export-csv-btn');
             
             if (result.type === 'message') {
                 showResult(result.message, result.status);
+                exportBtn.style.display = 'none';
                 return;
             }
             
             if (result.type === 'table') {
                 info.textContent = result.message || '';
+                lastQueryResult = result; // 存储结果
                 
                 if (result.data.length === 0) {
                     area.innerHTML = '<div class="empty-state">查询结果为空</div>';
+                    exportBtn.style.display = 'none';
                     return;
                 }
+                
+                exportBtn.style.display = 'inline-block'; // 显示导出按钮
                 
                 let html = '<div class="result-table-wrapper"><table><thead><tr>';
                 for (const col of result.columns) {
@@ -1619,6 +1902,31 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 html += '</tbody></table></div>';
                 area.innerHTML = html;
             }
+        }
+        
+        // 导出查询结果为CSV
+        function exportResultToCSV() {
+            if (!lastQueryResult || !lastQueryResult.data.length) {
+                alert('没有可导出的数据');
+                return;
+            }
+            const { columns, data } = lastQueryResult;
+            let csv = columns.join(',') + '\n';
+            for (const row of data) {
+                csv += columns.map(col => {
+                    const val = row[col];
+                    if (val === null || val === undefined) return '';
+                    const str = String(val);
+                    return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
+                }).join(',') + '\n';
+            }
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `query_result_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         function showResult(message, type) {

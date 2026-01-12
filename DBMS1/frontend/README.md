@@ -129,6 +129,48 @@ SELECT * FROM users WHERE name LIKE '%明%';    -- 包含"明"
 SELECT * FROM users WHERE name LIKE '张_';     -- "张"后跟一个字符
 ```
 
+### DISTINCT 去重查询
+
+```sql
+-- 查询不重复的值
+SELECT DISTINCT category FROM products;
+SELECT DISTINCT city, country FROM customers;
+```
+
+### BETWEEN 范围查询
+
+```sql
+-- 数值范围
+SELECT * FROM products WHERE price BETWEEN 100 AND 500;
+
+-- 结合其他条件
+SELECT * FROM orders WHERE amount BETWEEN 1000 AND 5000 AND status = 'completed';
+```
+
+### IN 集合查询
+
+```sql
+-- IN 包含
+SELECT * FROM users WHERE status IN ('active', 'pending');
+SELECT * FROM products WHERE category_id IN (1, 2, 5);
+
+-- NOT IN 排除
+SELECT * FROM orders WHERE status NOT IN ('cancelled', 'refunded');
+```
+
+### LIMIT OFFSET 分页查询
+
+```sql
+-- 限制返回条数
+SELECT * FROM products LIMIT 10;
+
+-- 分页查询（跳过前20条，取10条）
+SELECT * FROM products ORDER BY id LIMIT 10 OFFSET 20;
+
+-- 第3页数据（每馇10条）
+SELECT * FROM users LIMIT 10 OFFSET 20;
+```
+
 ### JOIN 多表查询
 
 ```sql
@@ -232,8 +274,24 @@ frontend/
 
 ### 导入导出
 
-- **导出**: 点击工具栏"📤 导出"按钮，下载JSON备份文件
-- **导入**: 点击工具栏"📥 导入"按钮，选择JSON文件导入
+- **导出JSON**: 点击工具栏"📤 导出"按钮，下载JSON备份文件
+- **导入JSON**: 点击工具栏"📥 导入"按钮，选择JSON文件导入
+- **导出CSV**: 执行查询后，点击结果区"📥 导出CSV"按钮下载查询结果
+
+## 📊 ER图可视化
+
+- 点击工具栏 **📊 ER图** 按钮打开
+- 显示所有表的字段结构和数据类型
+- 自动识别主键(🔑)和外键(🔗)
+- SVG连线显示表间外键关系
+- 底部列出所有外键引用关系
+
+## 📊 数据统计
+
+左侧边栏顶部显示实时统计卡片：
+- **数据库数**: 当前数据库数量
+- **数据表数**: 所有表的总数
+- **总记录数**: 所有表的数据行总和
 
 ## ⌨️ 快捷键
 
@@ -247,6 +305,12 @@ frontend/
 - 保存最近20条SQL语句
 - 点击历史记录可快速回填到编辑器
 - 历史记录保存在浏览器localStorage中
+
+## 👆 快捷操作
+
+- **点击表名**: 快速预览表数据（最多50条）
+- **SQL模板**: 点击快捷按钮插入常用SQL语句
+- **快捷键**: Ctrl+Enter 执行SQL
 
 ## 🔒 事务说明
 
@@ -301,10 +365,20 @@ ROLLBACK;  -- 撤销删除
 
 ## 📄 版本信息
 
-- **版本**: 1.1
+- **版本**: 1.2
 - **更新日期**: 2026-01-12
 
 ### 更新日志
+
+**v1.2** (2026-01-12)
+- 新增 DISTINCT 去重查询
+- 新增 BETWEEN 范围查询
+- 新增 IN/NOT IN 集合查询
+- 新增 LIMIT OFFSET 分页查询
+- 新增查询结果导出CSV功能
+- 新增数据统计卡片
+- 新增 ER图可视化（外键连线）
+- 优化表数据快速预览
 
 **v1.1** (2026-01-12)
 - 新增聚合函数: COUNT, SUM, AVG, MAX, MIN
@@ -318,4 +392,7 @@ ROLLBACK;  -- 撤销删除
 - JOIN多表查询
 - 事务支持
 - 本地文件存储
-- **作者**: 数据库原理课程设计
+
+---
+
+**作者**: 数据库原理课程设计
