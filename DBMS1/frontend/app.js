@@ -58,12 +58,18 @@
         }
 
         // 保存到本地文件（通过后端API，带乐观锁冲突检测）
-        async function saveToStorage() {
+        // isWriteOperation: true表示写操作（需要版本检查），false表示读操作（跳过版本检查）
+        async function saveToStorage(isWriteOperation = true) {
             // 始终保存到localStorage作为备份
             localStorage.setItem('minisql_data', JSON.stringify(databases));
             updateStorageInfo();
             
-            // 通过后端API保存到本地文件
+            // 读操作不需要同步到服务器文件（避免读-读冲突）
+            if (!isWriteOperation) {
+                return;
+            }
+            
+            // 通过后端API保存到本地文件（仅写操作）
             try {
                 const newVersion = new Date().toISOString();
                 const response = await fetch('/api/save', {
@@ -83,7 +89,7 @@
                 } else if (response.status === 409) {
                     const result = await response.json();
                     console.warn('⚠️ 保存冲突:', result.error);
-                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击“确定”刷新页面加载最新数据，\n点击“取消”强制覆盖服务器数据。')) {
+                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击"确定"刷新页面加载最新数据，\n点击"取消"强制覆盖服务器数据。')) {
                         location.reload();
                     } else {
                         // 强制保存 - 跳过版本检查
@@ -799,6 +805,15 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         // ==================== SQL 解析器 ====================
+        // 判断SQL是否为读操作（不修改数据）
+        function isReadOnlySQL(sql) {
+            const upperSQL = sql.toUpperCase().trim();
+            return upperSQL.startsWith('SELECT') || 
+                   upperSQL.startsWith('SHOW') || 
+                   upperSQL.startsWith('DESC') || 
+                   upperSQL.startsWith('DESCRIBE');
+        }
+        
         function executeSQL() {
             let sql = document.getElementById('sql-editor').value.trim();
             if (!sql) { showResult('请输入 SQL 语句', 'error'); return; }
@@ -809,7 +824,9 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
                 let lastResult = null;
                 let totalInserted = 0, insertCount = 0;
+                let hasWriteOperation = false;
                 for (const stmt of statements) {
+                    if (!isReadOnlySQL(stmt)) hasWriteOperation = true;
                     const result = parseSingleSQL(stmt.trim());
                     // 累计INSERT结果
                     if (result && result.message && result.message.includes('插入')) {
@@ -825,7 +842,9 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 const endTime = performance.now();
                 document.getElementById('exec-time').textContent = `执行耗时: ${(endTime - startTime).toFixed(2)}ms`;
                 if (lastResult) displayResult(lastResult);
-                saveToStorage();
+                // 事务中不同步到服务器，等COMMIT/ROLLBACK时再同步
+                // 只有写操作且不在事务中才同步到服务器
+                saveToStorage(hasWriteOperation && !inTransaction);
                 renderDatabaseList();
                 renderTableList();
                 // 添加到执行历史
@@ -921,6 +940,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             inTransaction = false;
             transactionSnapshot = null;
             updateTransactionStatus();
+            // COMMIT时同步数据到服务器
+            saveToStorage(true);
             return { type: 'message', message: '✅ 事务已提交 (COMMIT) - 所有更改已永久保存', status: 'success' };
         }
 
@@ -930,6 +951,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             inTransaction = false;
             transactionSnapshot = null;
             updateTransactionStatus();
+            // ROLLBACK后同步恢复的数据到服务器
+            saveToStorage(true);
             return { type: 'message', message: '⏪ 事务已回滚 (ROLLBACK) - 所有更改已撤销，数据已恢复', status: 'warning' };
         }
 

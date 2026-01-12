@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "forceWrite": true,
-  "lastModified": "2026-01-12T09:59:10.677Z",
+  "lastModified": "2026-01-12T11:08:04.428Z",
   "databases": {
     "school": {
       "tables": {
@@ -58,12 +58,20 @@
             {
               "id": 1,
               "name": "张三",
-              "age": 21
+              "age": 20
             },
             {
               "id": 2,
               "name": "李四",
-              "age": 22
+              "age": 21
+            },
+            {
+              "name": "锁测试A",
+              "age": 25
+            },
+            {
+              "name": "事务COMMIT测试",
+              "age": 30
             }
           ]
         },
@@ -508,196 +516,6 @@
           ],
           "indexes": {},
           "data": []
-        }
-      }
-    },
-    "testdb": {
-      "tables": {
-        "users": {
-          "columns": [
-            {
-              "name": "id",
-              "type": "INT",
-              "size": null,
-              "primaryKey": true,
-              "autoIncrement": true,
-              "notNull": false,
-              "default": null
-            },
-            {
-              "name": "name",
-              "type": "VARCHAR",
-              "size": 50,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": true,
-              "default": null
-            },
-            {
-              "name": "age",
-              "type": "INT",
-              "size": null,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            },
-            {
-              "name": "email",
-              "type": "VARCHAR",
-              "size": 100,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            }
-          ],
-          "foreignKeys": [],
-          "indexes": {},
-          "data": [
-            {
-              "id": 1,
-              "name": "张三",
-              "age": 26,
-              "email": "zhang@example.com"
-            },
-            {
-              "id": 2,
-              "name": "李四",
-              "age": 31,
-              "email": "li@example.com"
-            },
-            {
-              "id": 3,
-              "name": "王五",
-              "age": 28,
-              "email": "wang@test.com"
-            },
-            {
-              "id": 4,
-              "name": "测试B",
-              "age": 45,
-              "email": "testB@test.com"
-            },
-            {
-              "id": 5,
-              "name": "提交测试",
-              "age": 60,
-              "email": "commit@test.com"
-            },
-            {
-              "id": 6,
-              "name": "张三",
-              "age": 25
-            },
-            {
-              "id": 7,
-              "name": "张三",
-              "age": 25
-            },
-            {
-              "id": 8,
-              "name": "张三",
-              "age": 25
-            },
-            {
-              "id": 9,
-              "name": "张三",
-              "age": 25
-            },
-            {
-              "id": 10,
-              "name": "乐观锁测试",
-              "age": 99,
-              "email": "lock@test.com"
-            },
-            {
-              "id": 11,
-              "name": "乐观锁测试",
-              "age": 99,
-              "email": "lock@test.com"
-            },
-            {
-              "id": 12,
-              "name": "乐观锁测试",
-              "age": 99,
-              "email": "lock@test.com"
-            },
-            {
-              "id": 13,
-              "name": "乐观锁测试",
-              "age": 99,
-              "email": "lock@test.com"
-            },
-            {
-              "id": 14,
-              "name": "乐观锁测试",
-              "age": 99,
-              "email": "lock@test.com"
-            }
-          ]
-        },
-        "orders": {
-          "columns": [
-            {
-              "name": "id",
-              "type": "INT",
-              "size": null,
-              "primaryKey": true,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            },
-            {
-              "name": "user_id",
-              "type": "INT",
-              "size": null,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            },
-            {
-              "name": "amount",
-              "type": "FLOAT",
-              "size": null,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            },
-            {
-              "name": "product",
-              "type": "VARCHAR",
-              "size": 50,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
-            }
-          ],
-          "foreignKeys": [],
-          "indexes": {},
-          "data": [
-            {
-              "id": 1,
-              "user_id": 1,
-              "amount": 99.9,
-              "product": "手机"
-            },
-            {
-              "id": 2,
-              "user_id": 1,
-              "amount": 199.5,
-              "product": "电脑"
-            },
-            {
-              "id": 3,
-              "user_id": 2,
-              "amount": 49.9,
-              "product": "耳机"
-            }
-          ]
         }
       }
     }
