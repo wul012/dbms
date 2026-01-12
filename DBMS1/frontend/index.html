@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBMS - 数据库管理系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #3a3a5a;
+            margin-bottom: 30px;
+        }
+        header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        header p {
+            color: #888;
+            margin-top: 10px;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 12px 30px;
+            border: none;
+            background: #2a2a4a;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .tab-btn:hover, .tab-btn.active {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+        }
+        .panel {
+            display: none;
+            background: #1e1e3a;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        .panel.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #aaa;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #3a3a5a;
+            background: #2a2a4a;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            color: #fff;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: transform 0.2s;
+        }
+        .btn:hover {
+            transform: scale(1.02);
+        }
+        .btn-secondary {
+            background: #3a3a5a;
+        }
+        .field-list {
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .field-item {
+            background: #2a2a4a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .field-info {
+            display: flex;
+            gap: 20px;
+        }
+        .field-info span {
+            color: #00d4ff;
+        }
+        .delete-btn {
+            background: #e74c3c;
+            border: none;
+            color: #fff;
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .table-list {
+            margin-top: 20px;
+        }
+        .table-item {
+            background: #2a2a4a;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .table-item:hover {
+            background: #3a3a5a;
+            transform: translateX(5px);
+        }
+        .table-detail {
+            margin-top: 20px;
+            padding: 20px;
+            background: #252545;
+            border-radius: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #3a3a5a;
+        }
+        th {
+            background: #2a2a4a;
+            color: #00d4ff;
+        }
+        .checkbox-group {
+            display: flex;
+            gap: 30px;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        .inline-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            padding: 20px;
+            background: #252545;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success {
+            background: #27ae60;
+            display: block;
+        }
+        .message.error {
+            background: #e74c3c;
+            display: block;
+        }
+        #log-output {
+            background: #0a0a1a;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 DBMS 数据库管理系统</h1>
+            <p>Database Management System - 数据库原理课程设计</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showPanel('create')">创建新表</button>
+            <button class="tab-btn" onclick="showPanel('view')">查看表结构</button>
+            <button class="tab-btn" onclick="showPanel('log')">操作日志</button>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <!-- 创建表面板 -->
+        <div id="create-panel" class="panel active">
+            <h2 style="margin-bottom: 20px;">🆕 创建新表</h2>
+            
+            <div class="form-group">
+                <label>数据库文件名 (.dbf)</label>
+                <input type="text" id="db-filename" placeholder="例如: mydb.dbf" value="test.dbf">
+            </div>
+            
+            <div class="form-group">
+                <label>表名</label>
+                <input type="text" id="table-name" placeholder="例如: student">
+            </div>
+
+            <h3 style="margin: 20px 0 15px;">添加字段</h3>
+            <div class="inline-form">
+                <div class="form-group">
+                    <label>字段名</label>
+                    <input type="text" id="field-name" placeholder="例如: id">
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <select id="field-type">
+                        <option value="int">int</option>
+                        <option value="char">char</option>
+                        <option value="float">float</option>
+                        <option value="double">double</option>
+                        <option value="varchar">varchar</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>大小</label>
+                    <input type="number" id="field-size" placeholder="4" value="4">
+                </div>
+                <div class="form-group">
+                    <label>选项</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="field-key"> 主键</label>
+                        <label><input type="checkbox" id="field-null"> 允许空</label>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-secondary" onclick="addField()">➕ 添加字段</button>
+
+            <h3 style="margin: 20px 0 15px;">字段列表</h3>
+            <div id="field-list" class="field-list">
+                <p style="color: #666;">暂无字段，请添加字段</p>
+            </div>
+
+            <button class="btn" onclick="createTable()" style="margin-top: 20px;">💾 保存表结构</button>
+        </div>
+
+        <!-- 查看表面板 -->
+        <div id="view-panel" class="panel">
+            <h2 style="margin-bottom: 20px;">📋 查看表结构</h2>
+            
+            <div class="form-group">
+                <label>数据库文件名 (.dbf)</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="view-db-filename" placeholder="例如: test.dbf" value="test.dbf">
+                    <button class="btn" onclick="loadTables()">加载</button>
+                </div>
+            </div>
+
+            <h3 style="margin: 20px 0 15px;">表列表</h3>
+            <div id="table-list" class="table-list">
+                <p style="color: #666;">请先加载数据库文件</p>
+            </div>
+
+            <div id="table-detail" class="table-detail" style="display: none;">
+                <h3 id="detail-title">表详情</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>字段名</th>
+                            <th>类型</th>
+                            <th>大小</th>
+                            <th>主键</th>
+                            <th>允许空</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detail-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 日志面板 -->
+        <div id="log-panel" class="panel">
+            <h2 style="margin-bottom: 20px;">📝 操作日志</h2>
+            <button class="btn btn-secondary" onclick="clearLog()">清空日志</button>
+            <div id="log-output">[系统启动] DBMS 前端已加载...</div>
+        </div>
+    </div>
+
+    <script>
+        // 存储字段
+        let fields = [];
+        // 存储表数据 (模拟后端)
+        let database = {};
+
+        // 初始化：从 localStorage 加载数据
+        function init() {
+            const saved = localStorage.getItem('dbms_data');
+            if (saved) {
+                database = JSON.parse(saved);
+            }
+            log('[初始化] 数据库已加载');
+        }
+
+        // 保存到 localStorage
+        function saveDatabase() {
+            localStorage.setItem('dbms_data', JSON.stringify(database));
+        }
+
+        // 切换面板
+        function showPanel(panel) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(panel + '-panel').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // 显示消息
+        function showMessage(msg, type) {
+            const el = document.getElementById('message');
+            el.textContent = msg;
+            el.className = 'message ' + type;
+            setTimeout(() => el.className = 'message', 3000);
+        }
+
+        // 添加日志
+        function log(msg) {
+            const el = document.getElementById('log-output');
+            const time = new Date().toLocaleTimeString();
+            el.textContent += `\n[${time}] ${msg}`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // 清空日志
+        function clearLog() {
+            document.getElementById('log-output').textContent = '[日志已清空]';
+        }
+
+        // 添加字段
+        function addField() {
+            const name = document.getElementById('field-name').value.trim();
+            const type = document.getElementById('field-type').value;
+            const size = parseInt(document.getElementById('field-size').value) || 4;
+            const isKey = document.getElementById('field-key').checked;
+            const allowNull = document.getElementById('field-null').checked;
+
+            if (!name) {
+                showMessage('请输入字段名', 'error');
+                return;
+            }
+
+            if (fields.find(f => f.name === name)) {
+                showMessage('字段名已存在', 'error');
+                return;
+            }
+
+            fields.push({ name, type, size, isKey, allowNull });
+            renderFields();
+            log(`添加字段: ${name} (${type}, ${size})`);
+
+            // 清空输入
+            document.getElementById('field-name').value = '';
+            document.getElementById('field-key').checked = false;
+            document.getElementById('field-null').checked = false;
+        }
+
+        // 渲染字段列表
+        function renderFields() {
+            const container = document.getElementById('field-list');
+            if (fields.length === 0) {
+                container.innerHTML = '<p style="color: #666;">暂无字段，请添加字段</p>';
+                return;
+            }
+
+            container.innerHTML = fields.map((f, i) => `
+                <div class="field-item">
+                    <div class="field-info">
+                        <span>${f.name}</span>
+                        <span>${f.type}</span>
+                        <span>大小: ${f.size}</span>
+                        <span>${f.isKey ? '🔑主键' : ''}</span>
+                        <span>${f.allowNull ? '允许空' : '非空'}</span>
+                    </div>
+                    <button class="delete-btn" onclick="removeField(${i})">删除</button>
+                </div>
+            `).join('');
+        }
+
+        // 删除字段
+        function removeField(index) {
+            const removed = fields.splice(index, 1)[0];
+            renderFields();
+            log(`删除字段: ${removed.name}`);
+        }
+
+        // 创建表
+        function createTable() {
+            const dbFile = document.getElementById('db-filename').value.trim();
+            const tableName = document.getElementById('table-name').value.trim();
+
+            if (!dbFile) {
+                showMessage('请输入数据库文件名', 'error');
+                return;
+            }
+            if (!tableName) {
+                showMessage('请输入表名', 'error');
+                return;
+            }
+            if (fields.length === 0) {
+                showMessage('请至少添加一个字段', 'error');
+                return;
+            }
+
+            // 初始化数据库文件
+            if (!database[dbFile]) {
+                database[dbFile] = {};
+            }
+
+            // 保存表结构
+            database[dbFile][tableName] = {
+                name: tableName,
+                fields: [...fields],
+                createdAt: new Date().toISOString()
+            };
+
+            saveDatabase();
+            showMessage(`表 "${tableName}" 创建成功！`, 'success');
+            log(`创建表: ${tableName} 在 ${dbFile}, 字段数: ${fields.length}`);
+
+            // 清空
+            fields = [];
+            renderFields();
+            document.getElementById('table-name').value = '';
+        }
+
+        // 加载表列表
+        function loadTables() {
+            const dbFile = document.getElementById('view-db-filename').value.trim();
+            if (!dbFile) {
+                showMessage('请输入数据库文件名', 'error');
+                return;
+            }
+
+            const tables = database[dbFile];
+            const container = document.getElementById('table-list');
+
+            if (!tables || Object.keys(tables).length === 0) {
+                container.innerHTML = '<p style="color: #666;">该数据库文件中没有表</p>';
+                document.getElementById('table-detail').style.display = 'none';
+                log(`加载 ${dbFile}: 无表`);
+                return;
+            }
+
+            container.innerHTML = Object.keys(tables).map(name => `
+                <div class="table-item" onclick="showTableDetail('${dbFile}', '${name}')">
+                    📄 ${name}
+                    <span style="color: #666; font-size: 12px; margin-left: 10px;">
+                        ${tables[name].fields.length} 个字段
+                    </span>
+                </div>
+            `).join('');
+
+            log(`加载 ${dbFile}: 找到 ${Object.keys(tables).length} 个表`);
+        }
+
+        // 显示表详情
+        function showTableDetail(dbFile, tableName) {
+            const table = database[dbFile][tableName];
+            document.getElementById('detail-title').textContent = `📊 表: ${tableName}`;
+            
+            const tbody = document.getElementById('detail-body');
+            tbody.innerHTML = table.fields.map(f => `
+                <tr>
+                    <td>${f.name}</td>
+                    <td>${f.type}</td>
+                    <td>${f.size}</td>
+                    <td>${f.isKey ? '✅' : '❌'}</td>
+                    <td>${f.allowNull ? '✅' : '❌'}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('table-detail').style.display = 'block';
+            log(`查看表详情: ${tableName}`);
+        }
+
+        // 初始化
+        init();
+    </script>
+</body>
+</html>
