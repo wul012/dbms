@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "lastModified": "2026-01-12T03:54:35.707Z",
+  "databases": {
+    "mydb": {
+      "tables": {
+        "users": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "data": [
+            {
+              "id": 1,
+              "name": "测试用户"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
