@@ -22,6 +22,13 @@
             renderDatabaseList();
             renderTableList();
             updateStorageInfo();
+            const pendingMessage = sessionStorage.getItem('minisql_pending_message');
+            const pendingMessageType = sessionStorage.getItem('minisql_pending_message_type');
+            if (pendingMessage) {
+                showResult(pendingMessage, pendingMessageType || 'error');
+                sessionStorage.removeItem('minisql_pending_message');
+                sessionStorage.removeItem('minisql_pending_message_type');
+            }
             document.getElementById('sql-editor').addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); executeSQL(); }
             });
@@ -83,27 +90,48 @@
                     })
                 });
                 if (response.ok) {
-                    const result = await response.json();
+                    let result = null;
+                    try { result = await response.json(); } catch (e) {}
                     serverVersion = newVersion;  // 更新本地版本号
-                    console.log('✅ 数据已保存到本地文件:', result.path);
+                    console.log('✅ 数据已保存到本地文件:', result && result.path ? result.path : '');
                 } else if (response.status === 409) {
-                    const result = await response.json();
-                    console.warn('⚠️ 保存冲突:', result.error);
+                    let result = null;
+                    try { result = await response.json(); } catch (e) {}
+                    const errorMessage = (result && result.error) ? result.error : '数据冲突：其他进程已修改数据，请刷新页面';
+                    console.warn('⚠️ 保存冲突:', errorMessage);
+                    showResult(`错误: ${errorMessage}`, 'error');
                     if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击"确定"刷新页面加载最新数据，\n点击"取消"强制覆盖服务器数据。')) {
+                        sessionStorage.setItem('minisql_pending_message', `错误: ${errorMessage}`);
+                        sessionStorage.setItem('minisql_pending_message_type', 'error');
                         location.reload();
                     } else {
                         // 强制保存 - 跳过版本检查
                         const forceVersion = new Date().toISOString();
-                        await fetch('/api/save', {
+                        const forceResp = await fetch('/api/save', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ version: '1.0', forceWrite: true, lastModified: forceVersion, databases })
                         });
-                        serverVersion = forceVersion;
+                        if (forceResp.ok) {
+                            serverVersion = forceVersion;
+                        } else {
+                            let forceResult = null;
+                            try { forceResult = await forceResp.json(); } catch (e) {}
+                            const forceErrorMessage = (forceResult && forceResult.error) ? forceResult.error : `强制保存失败 (HTTP ${forceResp.status})`;
+                            console.warn('⚠️ 强制保存失败:', forceErrorMessage);
+                            showResult(`错误: ${forceErrorMessage}`, 'error');
+                        }
                     }
+                } else {
+                    let result = null;
+                    try { result = await response.json(); } catch (e) {}
+                    const errorMessage = (result && result.error) ? result.error : `保存失败 (HTTP ${response.status})`;
+                    console.warn('⚠️ 保存失败:', errorMessage);
+                    showResult(`错误: ${errorMessage}`, 'error');
                 }
             } catch (e) {
                 console.log('后端API不可用，数据已保存到localStorage');
+                showResult('错误: 后端API不可用，数据仅保存到localStorage', 'error');
             }
         }
 
@@ -805,13 +833,19 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         // ==================== SQL 解析器 ====================
-        // 判断SQL是否为读操作（不修改数据）
+        // 判断SQL是否为读操作或事务控制命令（不需要额外同步）
+        // 事务控制命令(COMMIT/ROLLBACK)内部已处理同步，避免重复
         function isReadOnlySQL(sql) {
             const upperSQL = sql.toUpperCase().trim();
             return upperSQL.startsWith('SELECT') || 
                    upperSQL.startsWith('SHOW') || 
                    upperSQL.startsWith('DESC') || 
-                   upperSQL.startsWith('DESCRIBE');
+                   upperSQL.startsWith('DESCRIBE') ||
+                   upperSQL === 'BEGIN' ||
+                   upperSQL === 'START TRANSACTION' ||
+                   upperSQL === 'BEGIN TRANSACTION' ||
+                   upperSQL === 'COMMIT' ||
+                   upperSQL === 'ROLLBACK';
         }
         
         function executeSQL() {
@@ -825,9 +859,13 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 let lastResult = null;
                 let totalInserted = 0, insertCount = 0;
                 let hasWriteOperation = false;
+                let hasTransactionControl = false;
                 for (const stmt of statements) {
-                    if (!isReadOnlySQL(stmt)) hasWriteOperation = true;
-                    const result = parseSingleSQL(stmt.trim());
+                    const trimmedStmt = stmt.trim();
+                    const upperStmt = trimmedStmt.toUpperCase();
+                    if (upperStmt === 'COMMIT' || upperStmt === 'ROLLBACK') hasTransactionControl = true;
+                    if (!isReadOnlySQL(trimmedStmt)) hasWriteOperation = true;
+                    const result = parseSingleSQL(trimmedStmt);
                     // 累计INSERT结果
                     if (result && result.message && result.message.includes('插入')) {
                         const match = result.message.match(/(\d+)/);
@@ -844,7 +882,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (lastResult) displayResult(lastResult);
                 // 事务中不同步到服务器，等COMMIT/ROLLBACK时再同步
                 // 只有写操作且不在事务中才同步到服务器
-                saveToStorage(hasWriteOperation && !inTransaction);
+                saveToStorage(hasWriteOperation && !inTransaction && !hasTransactionControl);
                 renderDatabaseList();
                 renderTableList();
                 // 添加到执行历史

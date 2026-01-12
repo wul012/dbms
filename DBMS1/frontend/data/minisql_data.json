@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "forceWrite": true,
-  "lastModified": "2026-01-12T11:08:04.428Z",
+  "expectedVersion": "2026-01-12T13:37:34.819Z",
+  "lastModified": "2026-01-12T13:39:03.568Z",
   "databases": {
     "school": {
       "tables": {
@@ -72,6 +72,150 @@
             {
               "name": "事务COMMIT测试",
               "age": 30
+            },
+            {
+              "name": "双事务A",
+              "age": 40
+            },
+            {
+              "name": "深度测试",
+              "age": 99
+            },
+            {
+              "name": "batchCommit_1768221914450_40",
+              "age": 77
+            },
+            {
+              "name": "pwBatch_1768222062340_551",
+              "age": 77
+            },
+            {
+              "name": "pwStep_1768222063263_171",
+              "age": 66
+            },
+            {
+              "name": "pwDualA_1768222068501_298",
+              "age": 11
+            },
+            {
+              "name": "batch_1768222444916_938",
+              "age": 77
+            },
+            {
+              "name": "stepCommit_1768222450916_942",
+              "age": 66
+            },
+            {
+              "name": "dualA_1768222488050_664",
+              "age": 11
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "batch_1768223328576_14",
+              "age": 77
+            },
+            {
+              "name": "stepCommit_1768223329591_89",
+              "age": 66
+            },
+            {
+              "name": "dualA_1768223338943_16",
+              "age": 11
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "回滚测试",
+              "age": 88
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "回滚测试",
+              "age": 88
+            },
+            {
+              "name": "回滚测试",
+              "age": 88
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "popupTest_B",
+              "age": 2
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "reloadMsg_A",
+              "age": 1
+            },
+            {
+              "name": "reloadMsg_B",
+              "age": 2
+            },
+            {
+              "name": "reloadMsg2_A",
+              "age": 1
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 77
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 76
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 75
             }
           ]
         },
