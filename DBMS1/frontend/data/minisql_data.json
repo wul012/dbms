@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "lastModified": "2026-01-12T03:54:35.707Z",
+  "lastModified": "2026-01-12T04:10:05.100Z",
   "databases": {
     "mydb": {
       "tables": {
@@ -29,6 +29,10 @@
             {
               "id": 1,
               "name": "测试用户"
+            },
+            {
+              "id": 2,
+              "name": "新用户"
             }
           ]
         }

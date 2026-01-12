@@ -6,82 +6,83 @@
     <title>MiniSQL - 数据库管理系统</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #fff; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); min-height: 100vh; color: #333; }
         .container { max-width: 1400px; margin: 0 auto; padding: 15px; }
-        header { text-align: center; padding: 15px 0; border-bottom: 1px solid #3a3a5a; margin-bottom: 15px; }
-        header h1 { font-size: 2em; background: linear-gradient(90deg, #00d4ff, #7b2cbf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        header p { color: #888; margin-top: 5px; font-size: 13px; }
-        .toolbar { display: flex; gap: 10px; margin-bottom: 15px; padding: 10px; background: #1e1e3a; border-radius: 8px; flex-wrap: wrap; }
-        .toolbar-group { display: flex; gap: 5px; padding-right: 15px; border-right: 1px solid #3a3a5a; }
+        header { text-align: center; padding: 15px 0; border-bottom: 1px solid #ddd; margin-bottom: 15px; }
+        header h1 { font-size: 2em; background: linear-gradient(90deg, #0066cc, #6633cc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        header p { color: #666; margin-top: 5px; font-size: 13px; }
+        .toolbar { display: flex; gap: 10px; margin-bottom: 15px; padding: 10px; background: #fff; border-radius: 8px; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .toolbar-group { display: flex; gap: 5px; padding-right: 15px; border-right: 1px solid #e0e0e0; }
         .toolbar-group:last-child { border-right: none; }
         .main-layout { display: grid; grid-template-columns: 220px 1fr; gap: 15px; }
-        .sidebar { background: #1e1e3a; border-radius: 10px; padding: 15px; height: fit-content; max-height: calc(100vh - 200px); overflow-y: auto; }
-        .sidebar h3 { color: #00d4ff; margin-bottom: 10px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-        .db-item, .table-item { padding: 8px 10px; background: #2a2a4a; border-radius: 5px; margin-bottom: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-        .db-item:hover, .table-item:hover { background: #3a3a5a; }
-        .db-item.active, .table-item.active { background: linear-gradient(90deg, #00d4ff33, #7b2cbf33); border-left: 3px solid #00d4ff; }
+        .sidebar { background: #fff; border-radius: 10px; padding: 15px; height: fit-content; max-height: calc(100vh - 200px); overflow-y: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .sidebar h3 { color: #0066cc; margin-bottom: 10px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .db-item, .table-item { padding: 8px 10px; background: #f8f9fa; border-radius: 5px; margin-bottom: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; justify-content: space-between; border: 1px solid #e9ecef; }
+        .db-item:hover, .table-item:hover { background: #e9ecef; }
+        .db-item.active, .table-item.active { background: linear-gradient(90deg, #0066cc22, #6633cc22); border-left: 3px solid #0066cc; }
         .item-actions { display: flex; gap: 3px; }
-        .item-actions button { padding: 2px 6px; font-size: 10px; background: transparent; border: 1px solid #555; color: #888; border-radius: 3px; cursor: pointer; }
-        .item-actions button:hover { background: #3a3a5a; color: #fff; }
+        .item-actions button { padding: 2px 6px; font-size: 10px; background: transparent; border: 1px solid #ccc; color: #666; border-radius: 3px; cursor: pointer; }
+        .item-actions button:hover { background: #e9ecef; color: #333; }
         .main-content { display: flex; flex-direction: column; gap: 12px; }
-        .panel { background: #1e1e3a; border-radius: 10px; padding: 15px; }
+        .panel { background: #fff; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .panel-header h3 { color: #00d4ff; font-size: 14px; }
-        .btn { padding: 8px 16px; border: none; background: linear-gradient(90deg, #00d4ff, #7b2cbf); color: #fff; cursor: pointer; border-radius: 5px; font-size: 13px; transition: all 0.2s; }
+        .panel-header h3 { color: #0066cc; font-size: 14px; }
+        .btn { padding: 8px 16px; border: none; background: linear-gradient(90deg, #0066cc, #6633cc); color: #fff; cursor: pointer; border-radius: 5px; font-size: 13px; transition: all 0.2s; }
         .btn:hover { transform: scale(1.02); opacity: 0.9; }
         .btn-sm { padding: 5px 10px; font-size: 11px; }
         .btn-xs { padding: 3px 8px; font-size: 10px; }
-        .btn-secondary { background: #3a3a5a; }
-        .btn-danger { background: #e74c3c; }
-        .btn-success { background: #27ae60; }
-        .btn-warning { background: #f39c12; }
-        #sql-editor { width: 100%; height: 120px; background: #0a0a1a; border: 1px solid #3a3a5a; border-radius: 6px; color: #fff; padding: 12px; font-family: 'Consolas', monospace; font-size: 13px; resize: vertical; line-height: 1.4; }
-        #sql-editor:focus { outline: none; border-color: #00d4ff; }
+        .btn-secondary { background: #6c757d; }
+        .btn-danger { background: #dc3545; }
+        .btn-success { background: #28a745; }
+        .btn-warning { background: #ffc107; color: #333; }
+        #sql-editor { width: 100%; height: 120px; background: #f8f9fa; border: 1px solid #ced4da; border-radius: 6px; color: #333; padding: 12px; font-family: 'Consolas', monospace; font-size: 13px; resize: vertical; line-height: 1.4; }
+        #sql-editor:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 3px rgba(0,102,204,0.15); }
         .quick-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
-        .quick-btn { padding: 4px 10px; background: #2a2a4a; border: 1px solid #3a3a5a; color: #aaa; border-radius: 3px; cursor: pointer; font-size: 11px; }
-        .quick-btn:hover { background: #3a3a5a; color: #fff; }
+        .quick-btn { padding: 4px 10px; background: #f8f9fa; border: 1px solid #ced4da; color: #495057; border-radius: 3px; cursor: pointer; font-size: 11px; }
+        .quick-btn:hover { background: #e9ecef; color: #333; }
         .result-container { min-height: 250px; }
         .result-table-wrapper { overflow-x: auto; max-height: 350px; overflow-y: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { padding: 8px 10px; text-align: left; border: 1px solid #3a3a5a; }
-        th { background: #2a2a4a; color: #00d4ff; position: sticky; top: 0; font-weight: 600; }
-        tr:hover { background: #252545; }
+        th, td { padding: 8px 10px; text-align: left; border: 1px solid #dee2e6; }
+        th { background: #f1f3f5; color: #0066cc; position: sticky; top: 0; font-weight: 600; }
+        tr:hover { background: #f8f9fa; }
         .message-box { padding: 10px 12px; border-radius: 5px; margin-bottom: 10px; font-size: 12px; }
-        .message-box.success { background: #27ae6033; border: 1px solid #27ae60; color: #27ae60; }
-        .message-box.error { background: #e74c3c33; border: 1px solid #e74c3c; color: #e74c3c; }
-        .message-box.info { background: #3498db33; border: 1px solid #3498db; color: #3498db; }
-        .status-bar { background: #0a0a1a; padding: 8px 15px; border-radius: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+        .message-box.success { background: #d4edda; border: 1px solid #28a745; color: #155724; }
+        .message-box.error { background: #f8d7da; border: 1px solid #dc3545; color: #721c24; }
+        .message-box.info { background: #cce5ff; border: 1px solid #0066cc; color: #004085; }
+        .message-box.warning { background: #fff3cd; border: 1px solid #ffc107; color: #856404; }
+        .status-bar { background: #f1f3f5; padding: 8px 15px; border-radius: 6px; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
         .status-item { display: flex; align-items: center; gap: 6px; }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #27ae60; }
-        .empty-state { text-align: center; padding: 30px; color: #666; font-size: 13px; }
-        .syntax-help { background: #0a0a1a; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 11px; color: #888; display: none; max-height: 200px; overflow-y: auto; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #28a745; }
+        .empty-state { text-align: center; padding: 30px; color: #999; font-size: 13px; }
+        .syntax-help { background: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 11px; color: #666; display: none; max-height: 200px; overflow-y: auto; border: 1px solid #e9ecef; }
         .syntax-help.show { display: block; }
-        .syntax-help code { color: #00d4ff; background: #2a2a4a; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+        .syntax-help code { color: #0066cc; background: #e9ecef; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
         .syntax-help p { margin-bottom: 5px; }
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-overlay.show { display: flex; }
-        .modal { background: #1e1e3a; border-radius: 10px; padding: 20px; min-width: 450px; max-width: 700px; max-height: 80vh; overflow-y: auto; }
-        .modal h3 { color: #00d4ff; margin-bottom: 15px; font-size: 16px; }
+        .modal { background: #fff; border-radius: 10px; padding: 20px; min-width: 450px; max-width: 700px; max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .modal h3 { color: #0066cc; margin-bottom: 15px; font-size: 16px; }
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 15px; }
         .form-group { margin-bottom: 12px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #aaa; font-size: 12px; }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #3a3a5a; background: #2a2a4a; color: #fff; border-radius: 5px; font-size: 12px; }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: #00d4ff; }
+        .form-group label { display: block; margin-bottom: 5px; color: #495057; font-size: 12px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ced4da; background: #fff; color: #333; border-radius: 5px; font-size: 12px; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 3px rgba(0,102,204,0.15); }
         .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
-        .checkbox-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: #aaa; }
+        .checkbox-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: #495057; }
         .checkbox-label input { width: auto; }
-        .field-editor { background: #0a0a1a; border-radius: 6px; padding: 10px; margin-top: 10px; }
-        .field-row { display: grid; grid-template-columns: 2fr 1fr 80px 60px 60px 40px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #2a2a4a; font-size: 11px; }
+        .field-editor { background: #f8f9fa; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #e9ecef; }
+        .field-row { display: grid; grid-template-columns: 2fr 1fr 80px 60px 60px 40px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #e9ecef; font-size: 11px; }
         .field-row:last-child { border-bottom: none; }
         .field-row input, .field-row select { padding: 5px; font-size: 11px; }
-        .field-header { font-weight: 600; color: #00d4ff; background: #1a1a2e; padding: 8px 0; border-radius: 4px; }
-        .tabs { display: flex; gap: 3px; margin-bottom: 12px; border-bottom: 1px solid #3a3a5a; padding-bottom: 8px; }
-        .tab-btn { padding: 6px 14px; background: transparent; border: 1px solid #3a3a5a; color: #888; cursor: pointer; border-radius: 5px 5px 0 0; font-size: 12px; }
-        .tab-btn.active { background: #3a3a5a; color: #fff; border-bottom-color: transparent; }
+        .field-header { font-weight: 600; color: #0066cc; background: #e9ecef; padding: 8px 0; border-radius: 4px; }
+        .tabs { display: flex; gap: 3px; margin-bottom: 12px; border-bottom: 1px solid #dee2e6; padding-bottom: 8px; }
+        .tab-btn { padding: 6px 14px; background: transparent; border: 1px solid #dee2e6; color: #666; cursor: pointer; border-radius: 5px 5px 0 0; font-size: 12px; }
+        .tab-btn.active { background: #e9ecef; color: #333; border-bottom-color: transparent; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        .file-info { background: #0a0a1a; padding: 10px; border-radius: 5px; font-size: 11px; color: #888; margin-top: 10px; }
-        .file-info strong { color: #00d4ff; }
+        .file-info { background: #f8f9fa; padding: 10px; border-radius: 5px; font-size: 11px; color: #666; margin-top: 10px; border: 1px solid #e9ecef; }
+        .file-info strong { color: #0066cc; }
     </style>
 </head>
 <body>
@@ -139,6 +140,9 @@
                         <button class="quick-btn" onclick="insertTemplate('join')">JOIN</button>
                         <button class="quick-btn" onclick="insertTemplate('update')">UPDATE</button>
                         <button class="quick-btn" onclick="insertTemplate('delete')">DELETE</button>
+                        <button class="quick-btn" onclick="insertTemplate('begin')">BEGIN</button>
+                        <button class="quick-btn" onclick="insertTemplate('commit')">COMMIT</button>
+                        <button class="quick-btn" onclick="insertTemplate('rollback')">ROLLBACK</button>
                     </div>
                     <div id="syntax-help" class="syntax-help">
                         <h4 style="color:#00d4ff;margin-bottom:8px">📖 SQL 语法参考</h4>
@@ -171,6 +175,7 @@
                 <div class="status-bar">
                     <div class="status-item"><span class="status-dot"></span><span>已连接</span></div>
                     <div class="status-item">当前数据库: <strong id="current-db">未选择</strong></div>
+                    <div class="status-item"><span id="transaction-status"></span></div>
                     <div class="status-item"><span id="exec-time"></span></div>
                     <div class="status-item"><span id="storage-info"></span></div>
                 </div>
@@ -253,6 +258,10 @@
         let editingTable = null;
         let fileHandle = null; // 本地文件句柄
         const DATA_FILE_PATH = 'data/minisql_data.json';
+        
+        // ==================== 事务支持 ====================
+        let inTransaction = false;
+        let transactionSnapshot = null; // 事务开始时的数据快照
 
         // ==================== 初始化 ====================
         async function init() {
@@ -631,7 +640,14 @@ FROM table1 t1
 JOIN table2 t2 ON t1.id = t2.foreign_id 
 WHERE t1.column = value;`,
                 'update': "UPDATE table_name SET col1 = 'value1' WHERE condition;",
-                'delete': 'DELETE FROM table_name WHERE condition;'
+                'delete': 'DELETE FROM table_name WHERE condition;',
+                'begin': `-- 事务示例
+BEGIN;
+INSERT INTO table_name (col1) VALUES ('value1');
+UPDATE table_name SET col1 = 'new_value' WHERE id = 1;
+COMMIT;  -- 或 ROLLBACK; 撤销更改`,
+                'commit': 'COMMIT;',
+                'rollback': 'ROLLBACK;'
             };
             document.getElementById('sql-editor').value = templates[type] || '';
         }
@@ -725,6 +741,11 @@ WHERE t1.column = value;`,
 
         function parseSingleSQL(sql) {
             const upperSQL = sql.toUpperCase().trim();
+            // 事务控制
+            if (upperSQL === 'BEGIN' || upperSQL === 'START TRANSACTION' || upperSQL === 'BEGIN TRANSACTION') return executeBegin();
+            if (upperSQL === 'COMMIT') return executeCommit();
+            if (upperSQL === 'ROLLBACK') return executeRollback();
+            // DDL
             if (upperSQL.startsWith('CREATE DATABASE')) return executeCreateDatabase(sql);
             if (upperSQL.startsWith('DROP DATABASE')) return executeDropDatabase(sql);
             if (upperSQL.startsWith('USE ')) return executeUse(sql);
@@ -734,6 +755,7 @@ WHERE t1.column = value;`,
             if (upperSQL.startsWith('DROP TABLE')) return executeDropTable(sql);
             if (upperSQL.startsWith('RENAME TABLE')) return executeRenameTable(sql);
             if (upperSQL.startsWith('DESC ') || upperSQL.startsWith('DESCRIBE ')) return executeDescribe(sql);
+            // DML
             if (upperSQL.startsWith('INSERT')) return executeInsert(sql);
             if (upperSQL.startsWith('SELECT')) return executeSelect(sql);
             if (upperSQL.startsWith('UPDATE')) return executeUpdate(sql);
@@ -741,6 +763,37 @@ WHERE t1.column = value;`,
             if (upperSQL.startsWith('ALTER TABLE')) return executeAlterTable(sql);
             if (upperSQL.startsWith('TRUNCATE')) return executeTruncate(sql);
             throw new Error(`不支持的 SQL 语句: ${sql}`);
+        }
+
+        // ==================== 事务执行器 ====================
+        function updateTransactionStatus() {
+            const el = document.getElementById('transaction-status');
+            el.innerHTML = inTransaction ? '<span style="color:#f39c12">🔒 事务进行中</span>' : '';
+        }
+
+        function executeBegin() {
+            if (inTransaction) throw new Error('事务已经开始，请先COMMIT或ROLLBACK');
+            inTransaction = true;
+            transactionSnapshot = JSON.parse(JSON.stringify(databases)); // 深拷贝
+            updateTransactionStatus();
+            return { type: 'message', message: '🔒 事务已开始 (BEGIN TRANSACTION) - 更改将暂存，需要COMMIT提交或ROLLBACK撤销', status: 'info' };
+        }
+
+        function executeCommit() {
+            if (!inTransaction) throw new Error('没有活动的事务');
+            inTransaction = false;
+            transactionSnapshot = null;
+            updateTransactionStatus();
+            return { type: 'message', message: '✅ 事务已提交 (COMMIT) - 所有更改已永久保存', status: 'success' };
+        }
+
+        function executeRollback() {
+            if (!inTransaction) throw new Error('没有活动的事务');
+            databases = transactionSnapshot; // 恢复快照
+            inTransaction = false;
+            transactionSnapshot = null;
+            updateTransactionStatus();
+            return { type: 'message', message: '⏪ 事务已回滚 (ROLLBACK) - 所有更改已撤销，数据已恢复', status: 'warning' };
         }
 
         // ==================== SQL 执行器 ====================
