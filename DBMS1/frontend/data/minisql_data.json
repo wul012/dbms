@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "lastModified": "2026-01-12T07:07:39.128Z",
+  "lastModified": "2026-01-12T07:16:34.705Z",
   "databases": {
     "school": {
       "tables": {
@@ -166,6 +166,347 @@
               "class_id": 1
             }
           ]
+        }
+      }
+    },
+    "ecommerce": {
+      "tables": {
+        "users": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "username",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR",
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "created_at",
+              "type": "DATETIME",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": []
+        },
+        "categories": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "description",
+              "type": "TEXT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": []
+        },
+        "products": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "price",
+              "type": "FLOAT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "stock",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "category_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [
+            {
+              "name": "fk_products_category_id",
+              "column": "category_id",
+              "refTable": "categories",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
+          "data": []
+        },
+        "orders": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "user_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "total_amount",
+              "type": "FLOAT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "created_at",
+              "type": "DATETIME",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [
+            {
+              "name": "fk_orders_user_id",
+              "column": "user_id",
+              "refTable": "users",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
+          "data": []
+        },
+        "order_items": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "order_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "product_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "quantity",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "price",
+              "type": "FLOAT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [
+            {
+              "name": "fk_order_items_order_id",
+              "column": "order_id",
+              "refTable": "orders",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            },
+            {
+              "name": "fk_order_items_product_id",
+              "column": "product_id",
+              "refTable": "products",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
+          "data": []
+        },
+        "reviews": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "user_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "product_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "rating",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "comment",
+              "type": "TEXT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [
+            {
+              "name": "fk_reviews_user_id",
+              "column": "user_id",
+              "refTable": "users",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            },
+            {
+              "name": "fk_reviews_product_id",
+              "column": "product_id",
+              "refTable": "products",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
+          "data": []
         }
       }
     }
