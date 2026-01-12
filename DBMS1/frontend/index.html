@@ -83,6 +83,10 @@
         .tab-content.active { display: block; }
         .file-info { background: #f8f9fa; padding: 10px; border-radius: 5px; font-size: 11px; color: #666; margin-top: 10px; border: 1px solid #e9ecef; }
         .file-info strong { color: #0066cc; }
+        .sql-history { background: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 10px; max-height: 150px; overflow-y: auto; border: 1px solid #e9ecef; }
+        .history-item { padding: 6px 10px; background: #fff; border: 1px solid #e9ecef; border-radius: 4px; margin-bottom: 5px; cursor: pointer; font-size: 11px; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-item:hover { background: #e9ecef; border-color: #0066cc; }
+        .history-time { color: #888; font-size: 10px; margin-right: 8px; }
     </style>
 </head>
 <body>
@@ -138,11 +142,20 @@
                         <button class="quick-btn" onclick="insertTemplate('insert')">INSERT</button>
                         <button class="quick-btn" onclick="insertTemplate('select')">SELECT</button>
                         <button class="quick-btn" onclick="insertTemplate('join')">JOIN</button>
+                        <button class="quick-btn" onclick="insertTemplate('aggregate')">聚合函数</button>
+                        <button class="quick-btn" onclick="insertTemplate('groupby')">GROUP BY</button>
                         <button class="quick-btn" onclick="insertTemplate('update')">UPDATE</button>
                         <button class="quick-btn" onclick="insertTemplate('delete')">DELETE</button>
                         <button class="quick-btn" onclick="insertTemplate('begin')">BEGIN</button>
-                        <button class="quick-btn" onclick="insertTemplate('commit')">COMMIT</button>
-                        <button class="quick-btn" onclick="insertTemplate('rollback')">ROLLBACK</button>
+                        <button class="quick-btn" onclick="toggleHistory()">📜 历史</button>
+                    </div>
+                    <!-- 执行历史 -->
+                    <div id="sql-history" class="sql-history" style="display:none">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <strong style="color:#0066cc">📜 执行历史</strong>
+                            <button class="btn btn-xs btn-secondary" onclick="clearHistory()">清空</button>
+                        </div>
+                        <div id="history-list"></div>
                     </div>
                     <div id="syntax-help" class="syntax-help">
                         <h4 style="color:#00d4ff;margin-bottom:8px">📖 SQL 语法参考</h4>
@@ -262,6 +275,9 @@
         // ==================== 事务支持 ====================
         let inTransaction = false;
         let transactionSnapshot = null; // 事务开始时的数据快照
+        
+        // ==================== 执行历史 ====================
+        let sqlHistory = JSON.parse(localStorage.getItem('sql_history') || '[]');
 
         // ==================== 初始化 ====================
         async function init() {
@@ -647,6 +663,16 @@ JOIN table2 t2 ON t1.id = t2.foreign_id
 WHERE t1.column = value;`,
                 'update': "UPDATE table_name SET col1 = 'value1' WHERE condition;",
                 'delete': 'DELETE FROM table_name WHERE condition;',
+                'aggregate': `-- 聚合函数示例
+SELECT COUNT(*) AS total FROM table_name;
+SELECT SUM(column) AS sum_val, AVG(column) AS avg_val FROM table_name;
+SELECT MAX(column), MIN(column) FROM table_name WHERE condition;`,
+                'groupby': `-- GROUP BY 分组查询
+SELECT category, COUNT(*) AS cnt, SUM(price) AS total
+FROM products
+GROUP BY category
+HAVING COUNT(*) > 1
+ORDER BY total DESC;`,
                 'begin': `-- 事务示例
 BEGIN;
 INSERT INTO table_name (col1) VALUES ('value1');
@@ -740,9 +766,46 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 saveToStorage();
                 renderDatabaseList();
                 renderTableList();
+                // 添加到执行历史
+                addToHistory(sql);
             } catch (error) {
                 showResult(`错误: ${error.message}`, 'error');
             }
+        }
+        
+        // ==================== 执行历史功能 ====================
+        function addToHistory(sql) {
+            const time = new Date().toLocaleTimeString();
+            sqlHistory.unshift({ sql, time });
+            if (sqlHistory.length > 20) sqlHistory.pop(); // 最多保存20条
+            localStorage.setItem('sql_history', JSON.stringify(sqlHistory));
+            renderHistory();
+        }
+        
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            if (!list) return;
+            list.innerHTML = sqlHistory.map((item, i) => 
+                `<div class="history-item" onclick="loadHistory(${i})" title="${item.sql}">
+                    <span class="history-time">${item.time}</span>${item.sql.substring(0, 60)}${item.sql.length > 60 ? '...' : ''}
+                </div>`
+            ).join('');
+        }
+        
+        function loadHistory(index) {
+            document.getElementById('sql-editor').value = sqlHistory[index].sql;
+        }
+        
+        function toggleHistory() {
+            const el = document.getElementById('sql-history');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            if (el.style.display === 'block') renderHistory();
+        }
+        
+        function clearHistory() {
+            sqlHistory = [];
+            localStorage.removeItem('sql_history');
+            renderHistory();
         }
 
         function parseSingleSQL(sql) {
@@ -1083,16 +1146,18 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 return executeJoinSelect(sql);
             }
             
-            // 解析简单 SELECT
-            const match = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?$/i);
+            // 解析SELECT（支持聚合函数和GROUP BY）
+            const match = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+GROUP\s+BY\s+([\w,\s]+))?(?:\s+HAVING\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?$/i);
             if (!match) throw new Error('SELECT 语法错误');
             
             const selectCols = match[1].trim();
             const tableName = match[2];
             const whereClause = match[3];
-            const orderBy = match[4];
-            const orderDir = match[5] || 'ASC';
-            const limit = match[6] ? parseInt(match[6]) : null;
+            const groupBy = match[4];
+            const havingClause = match[5];
+            const orderBy = match[6];
+            const orderDir = match[7] || 'ASC';
+            const limit = match[8] ? parseInt(match[8]) : null;
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
@@ -1102,6 +1167,13 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // WHERE 过滤
             if (whereClause) {
                 data = data.filter(row => evaluateWhere(row, whereClause));
+            }
+            
+            // 检查是否有聚合函数
+            const hasAggregate = /\b(COUNT|SUM|AVG|MAX|MIN)\s*\(/i.test(selectCols);
+            
+            if (hasAggregate || groupBy) {
+                return executeAggregateSelect(selectCols, data, table, groupBy, havingClause, orderBy, orderDir, limit);
             }
             
             // ORDER BY 排序
@@ -1118,7 +1190,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // LIMIT
             if (limit) data = data.slice(0, limit);
             
-            // 选择列
+            // 选择列（支持DISTINCT）
             let columns = selectCols === '*' ? table.columns.map(c => c.name) : selectCols.split(',').map(c => c.trim().split('.').pop());
             
             // 投影
@@ -1131,6 +1203,95 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             });
             
             return { type: 'table', columns, data: projectedData, message: `查询到 ${projectedData.length} 行数据` };
+        }
+
+        // 聚合查询处理
+        function executeAggregateSelect(selectCols, data, table, groupBy, havingClause, orderBy, orderDir, limit) {
+            const aggregateFuncs = {
+                COUNT: (arr, col) => col === '*' ? arr.length : arr.filter(r => r[col] !== null && r[col] !== undefined).length,
+                SUM: (arr, col) => arr.reduce((sum, r) => sum + (Number(r[col]) || 0), 0),
+                AVG: (arr, col) => { const vals = arr.filter(r => r[col] !== null); return vals.length ? vals.reduce((s, r) => s + Number(r[col]), 0) / vals.length : 0; },
+                MAX: (arr, col) => Math.max(...arr.map(r => r[col]).filter(v => v !== null && v !== undefined)),
+                MIN: (arr, col) => Math.min(...arr.map(r => r[col]).filter(v => v !== null && v !== undefined))
+            };
+            
+            // 解析选择的列和聚合函数
+            const selectItems = selectCols.split(',').map(s => s.trim());
+            const columns = [];
+            const colDefs = [];
+            
+            for (const item of selectItems) {
+                const aggMatch = item.match(/(\w+)\s*\(\s*(\*|\w+)\s*\)(?:\s+AS\s+(\w+))?/i);
+                if (aggMatch) {
+                    const func = aggMatch[1].toUpperCase();
+                    const col = aggMatch[2];
+                    const alias = aggMatch[3] || `${func}(${col})`;
+                    columns.push(alias);
+                    colDefs.push({ type: 'agg', func, col, alias });
+                } else {
+                    const colName = item.split('.').pop();
+                    columns.push(colName);
+                    colDefs.push({ type: 'col', col: colName });
+                }
+            }
+            
+            let result = [];
+            
+            if (groupBy) {
+                // GROUP BY 分组
+                const groupCols = groupBy.split(',').map(c => c.trim());
+                const groups = new Map();
+                
+                for (const row of data) {
+                    const key = groupCols.map(c => row[c]).join('|||');
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(row);
+                }
+                
+                for (const [key, groupData] of groups) {
+                    const newRow = {};
+                    const keyParts = key.split('|||');
+                    groupCols.forEach((c, i) => newRow[c] = keyParts[i]);
+                    
+                    for (const def of colDefs) {
+                        if (def.type === 'agg') {
+                            newRow[def.alias] = aggregateFuncs[def.func](groupData, def.col);
+                            if (def.func === 'AVG') newRow[def.alias] = Number(newRow[def.alias].toFixed(2));
+                        }
+                    }
+                    result.push(newRow);
+                }
+                
+                // HAVING 过滤
+                if (havingClause) {
+                    result = result.filter(row => evaluateWhere(row, havingClause));
+                }
+            } else {
+                // 无分组，整表聚合
+                const newRow = {};
+                for (const def of colDefs) {
+                    if (def.type === 'agg') {
+                        newRow[def.alias] = aggregateFuncs[def.func](data, def.col);
+                        if (def.func === 'AVG') newRow[def.alias] = Number(newRow[def.alias].toFixed(2));
+                    }
+                }
+                result.push(newRow);
+            }
+            
+            // ORDER BY
+            if (orderBy) {
+                result.sort((a, b) => {
+                    const va = a[orderBy], vb = b[orderBy];
+                    if (va < vb) return orderDir === 'ASC' ? -1 : 1;
+                    if (va > vb) return orderDir === 'ASC' ? 1 : -1;
+                    return 0;
+                });
+            }
+            
+            // LIMIT
+            if (limit) result = result.slice(0, limit);
+            
+            return { type: 'table', columns, data: result, message: `聚合查询到 ${result.length} 行数据` };
         }
 
         // 多表JOIN查询

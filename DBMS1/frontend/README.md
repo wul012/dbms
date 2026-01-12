@@ -78,6 +78,57 @@ DELETE FROM users WHERE id = 1;
 TRUNCATE TABLE users;
 ```
 
+### 聚合函数
+
+```sql
+-- COUNT 计数
+SELECT COUNT(*) AS total FROM users;
+SELECT COUNT(email) AS has_email FROM users;
+
+-- SUM 求和
+SELECT SUM(price) AS total_price FROM orders;
+
+-- AVG 平均值
+SELECT AVG(age) AS avg_age FROM users;
+
+-- MAX/MIN 最大/最小值
+SELECT MAX(price) AS max_price, MIN(price) AS min_price FROM products;
+
+-- 组合使用
+SELECT COUNT(*) AS cnt, SUM(amount) AS total, AVG(amount) AS avg FROM orders;
+```
+
+### GROUP BY 分组查询
+
+```sql
+-- 按分类分组统计
+SELECT category, COUNT(*) AS cnt FROM products GROUP BY category;
+
+-- 分组聚合
+SELECT department, AVG(salary) AS avg_salary, MAX(salary) AS max_salary
+FROM employees
+GROUP BY department;
+
+-- HAVING 过滤分组
+SELECT category, COUNT(*) AS cnt, SUM(price) AS total
+FROM products
+GROUP BY category
+HAVING COUNT(*) > 1
+ORDER BY total DESC;
+```
+
+### LIKE 模糊查询
+
+```sql
+-- % 匹配任意字符
+SELECT * FROM users WHERE name LIKE '张%';     -- 以"张"开头
+SELECT * FROM users WHERE name LIKE '%三';     -- 以"三"结尾
+SELECT * FROM users WHERE name LIKE '%明%';    -- 包含"明"
+
+-- _ 匹配单个字符
+SELECT * FROM users WHERE name LIKE '张_';     -- "张"后跟一个字符
+```
+
 ### JOIN 多表查询
 
 ```sql
@@ -86,16 +137,10 @@ SELECT u.name, o.product
 FROM users u 
 JOIN orders o ON u.id = o.user_id;
 
--- 左连接
-SELECT u.name, o.product 
-FROM users u 
-LEFT JOIN orders o ON u.id = o.user_id;
-
--- 多表连接
-SELECT u.name, o.product, p.price
-FROM users u
-JOIN orders o ON u.id = o.user_id
-JOIN products p ON o.product_id = p.id;
+-- 带别名的连接
+SELECT students.name, enrollments.class_id
+FROM students
+JOIN enrollments ON students.id = enrollments.student_id;
 ```
 
 ### 事务支持
@@ -196,6 +241,13 @@ frontend/
 |-------|-----|
 | `Ctrl + Enter` | 执行SQL语句 |
 
+## 📜 执行历史
+
+- 点击工具栏 **📜 历史** 按钮查看执行历史
+- 保存最近20条SQL语句
+- 点击历史记录可快速回填到编辑器
+- 历史记录保存在浏览器localStorage中
+
 ## 🔒 事务说明
 
 - `BEGIN` 开始事务后，状态栏显示"🔒 事务进行中"
@@ -226,10 +278,16 @@ INSERT INTO students (name, age, grade) VALUES ('王五', 19, '大一');
 -- 4. 查询数据
 SELECT * FROM students WHERE age >= 20 ORDER BY age DESC;
 
--- 5. 更新数据
-UPDATE students SET grade = '大三' WHERE name = '张三';
+-- 5. 聚合查询
+SELECT COUNT(*) AS total, AVG(age) AS avg_age FROM students;
 
--- 6. 事务操作
+-- 6. 分组统计
+SELECT grade, COUNT(*) AS cnt FROM students GROUP BY grade;
+
+-- 7. 模糊查询
+SELECT * FROM students WHERE name LIKE '%三%';
+
+-- 8. 事务操作
 BEGIN;
 DELETE FROM students WHERE id = 3;
 ROLLBACK;  -- 撤销删除
@@ -243,6 +301,21 @@ ROLLBACK;  -- 撤销删除
 
 ## 📄 版本信息
 
-- **版本**: 1.0
+- **版本**: 1.1
 - **更新日期**: 2026-01-12
+
+### 更新日志
+
+**v1.1** (2026-01-12)
+- 新增聚合函数: COUNT, SUM, AVG, MAX, MIN
+- 新增 GROUP BY 分组查询
+- 新增 HAVING 分组过滤
+- 新增 LIKE 模糊查询
+- 新增执行历史记录功能
+
+**v1.0** (2026-01-12)
+- 基础DDL/DML支持
+- JOIN多表查询
+- 事务支持
+- 本地文件存储
 - **作者**: 数据库原理课程设计
