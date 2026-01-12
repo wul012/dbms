@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "lastModified": "2026-01-12T06:23:01.231Z",
+  "lastModified": "2026-01-12T07:07:39.128Z",
   "databases": {
     "school": {
       "tables": {
@@ -11,7 +11,7 @@
               "type": "INT",
               "size": null,
               "primaryKey": true,
-              "autoIncrement": true,
+              "autoIncrement": false,
               "notNull": false,
               "default": null
             },
@@ -21,46 +21,48 @@
               "size": 50,
               "primaryKey": false,
               "autoIncrement": false,
-              "notNull": true,
-              "default": null
-            },
-            {
-              "name": "age",
-              "type": "VARCHAR",
-              "size": 10,
-              "primaryKey": false,
-              "autoIncrement": false,
               "notNull": false,
               "default": null
             },
             {
-              "name": "class",
-              "type": "VARCHAR",
-              "size": 20,
+              "name": "age",
+              "type": "INT",
+              "size": null,
               "primaryKey": false,
               "autoIncrement": false,
               "notNull": false,
               "default": null
             }
           ],
+          "foreignKeys": [],
+          "indexes": {
+            "idx_name": {
+              "name": "idx_name",
+              "columns": [
+                "name"
+              ],
+              "unique": false,
+              "data": {
+                "张三": [
+                  0
+                ],
+                "李四": [
+                  1
+                ]
+              },
+              "createdAt": "2026-01-12T07:02:41.753Z"
+            }
+          },
           "data": [
             {
               "id": 1,
               "name": "张三",
-              "age": 20,
-              "class": "大三"
+              "age": 20
             },
             {
               "id": 2,
               "name": "李四",
-              "age": 21,
-              "class": "大三"
-            },
-            {
-              "id": 3,
-              "name": "钱七",
-              "age": 23,
-              "class": "研一"
+              "age": 21
             }
           ]
         },
@@ -83,27 +85,18 @@
               "autoIncrement": false,
               "notNull": false,
               "default": null
-            },
-            {
-              "name": "credits",
-              "type": "INT",
-              "size": null,
-              "primaryKey": false,
-              "autoIncrement": false,
-              "notNull": false,
-              "default": null
             }
           ],
+          "foreignKeys": [],
+          "indexes": {},
           "data": [
             {
               "id": 1,
-              "title": "数据库原理",
-              "credits": 4
+              "title": "数据库原理"
             },
             {
               "id": 2,
-              "title": "操作系统",
-              "credits": 3
+              "title": "操作系统"
             }
           ]
         },
@@ -137,6 +130,25 @@
               "default": null
             }
           ],
+          "foreignKeys": [
+            {
+              "name": "fk_enrollments_student_id",
+              "column": "student_id",
+              "refTable": "students",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            },
+            {
+              "name": "fk_enrollments_class_id",
+              "column": "class_id",
+              "refTable": "classes",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
           "data": [
             {
               "id": 1,

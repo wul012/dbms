@@ -78,6 +78,43 @@ SHOW INDEXES FROM users;
 DROP INDEX idx_name ON users;
 ```
 
+### 外键约束
+
+```sql
+-- 创建表时定义外键
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 或使用内联语法
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT REFERENCES users(id)
+);
+
+-- 添加外键约束
+ALTER TABLE orders ADD FOREIGN KEY (user_id) REFERENCES users(id);
+
+-- 带约束名和动作
+ALTER TABLE orders ADD CONSTRAINT fk_user 
+    FOREIGN KEY (user_id) REFERENCES users(id) 
+    ON DELETE CASCADE ON UPDATE RESTRICT;
+
+-- 查看表的外键
+SHOW FOREIGN KEYS FROM orders;
+
+-- 删除外键约束
+ALTER TABLE orders DROP FOREIGN KEY fk_user;
+```
+
+**外键特性：**
+- **约束检查**: INSERT时验证外键值在引用表中存在
+- **删除保护**: DELETE时检查是否有其他表引用（RESTRICT模式）
+- **ON DELETE/UPDATE**: 支持 CASCADE, SET NULL, RESTRICT, NO ACTION
+- **JSON持久化**: 外键约束保存在数据文件中
+
 ### DML (数据操作语言)
 
 ```sql
@@ -384,10 +421,20 @@ ROLLBACK;  -- 撤销删除
 
 ## 📄 版本信息
 
-- **版本**: 1.3
+- **版本**: 1.4
 - **更新日期**: 2026-01-12
 
 ### 更新日志
+
+**v1.4** (2026-01-12)
+- 新增完整外键约束支持
+- 新增 CREATE TABLE ... FOREIGN KEY 语法
+- 新增 ALTER TABLE ADD/DROP FOREIGN KEY
+- 新增 SHOW FOREIGN KEYS 命令
+- 新增 INSERT 外键约束验证
+- 新增 DELETE 外键引用保护
+- 支持 ON DELETE/UPDATE 动作
+- 外键约束持久化到JSON
 
 **v1.3** (2026-01-12)
 - 新增索引管理: CREATE INDEX, DROP INDEX, SHOW INDEXES
