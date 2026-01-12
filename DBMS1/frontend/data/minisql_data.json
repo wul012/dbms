@@ -1,10 +1,70 @@
 {
   "version": "1.0",
-  "lastModified": "2026-01-12T04:10:05.100Z",
+  "lastModified": "2026-01-12T05:13:49.391Z",
   "databases": {
-    "mydb": {
+    "school": {
       "tables": {
-        "users": {
+        "students": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": true,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "age",
+              "type": "VARCHAR",
+              "size": 10,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "class",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "data": [
+            {
+              "id": 1,
+              "name": "张三",
+              "age": 20,
+              "class": "大三"
+            },
+            {
+              "id": 2,
+              "name": "李四",
+              "age": 21,
+              "class": "大三"
+            },
+            {
+              "id": 3,
+              "name": "钱七",
+              "age": 23,
+              "class": "研一"
+            }
+          ]
+        },
+        "classes": {
           "columns": [
             {
               "name": "id",
@@ -16,9 +76,18 @@
               "default": null
             },
             {
-              "name": "name",
+              "name": "title",
               "type": "VARCHAR",
-              "size": 50,
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "credits",
+              "type": "INT",
+              "size": null,
               "primaryKey": false,
               "autoIncrement": false,
               "notNull": false,
@@ -28,11 +97,61 @@
           "data": [
             {
               "id": 1,
-              "name": "测试用户"
+              "title": "数据库原理",
+              "credits": 4
             },
             {
               "id": 2,
-              "name": "新用户"
+              "title": "操作系统",
+              "credits": 3
+            }
+          ]
+        },
+        "enrollments": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "student_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "class_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "data": [
+            {
+              "id": 1,
+              "student_id": 1,
+              "class_id": 1
+            },
+            {
+              "id": 2,
+              "student_id": 1,
+              "class_id": 2
+            },
+            {
+              "id": 3,
+              "student_id": 2,
+              "class_id": 1
             }
           ]
         }

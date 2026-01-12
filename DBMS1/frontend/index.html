@@ -279,21 +279,27 @@
         // 从本地文件加载数据
         async function loadFromLocalFile() {
             try {
-                const response = await fetch(DATA_FILE_PATH);
+                // 添加时间戳防止缓存
+                const response = await fetch(DATA_FILE_PATH + '?t=' + Date.now());
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.databases) {
+                    if (data.databases && Object.keys(data.databases).length > 0) {
                         databases = data.databases;
+                        // 同步到localStorage，确保一致性
+                        localStorage.setItem('minisql_data', JSON.stringify(databases));
                         console.log('✅ 数据已从本地文件加载:', DATA_FILE_PATH);
                         return;
                     }
                 }
             } catch (e) {
-                console.log('本地文件不存在，尝试从localStorage加载');
+                console.log('本地文件加载失败，尝试从localStorage加载');
             }
             // 降级到localStorage
             const saved = localStorage.getItem('minisql_data');
-            if (saved) databases = JSON.parse(saved);
+            if (saved) {
+                databases = JSON.parse(saved);
+                console.log('✅ 数据已从localStorage加载');
+            }
         }
 
         // 保存到本地文件（通过后端API）

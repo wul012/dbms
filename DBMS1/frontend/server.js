@@ -51,8 +51,9 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // 静态文件服务
-    let filePath = req.url === '/' ? '/index.html' : req.url;
+    // 静态文件服务（移除查询参数）
+    let urlPath = req.url.split('?')[0];
+    let filePath = urlPath === '/' ? '/index.html' : urlPath;
     filePath = path.join(__dirname, filePath);
 
     const ext = path.extname(filePath);
