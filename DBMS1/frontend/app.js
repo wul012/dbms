@@ -51,7 +51,8 @@
             }
         }
 
-        // 保存到本地文件（通过后端API）
+        // 保存到本地文件（通过后端API，带冲突检测）
+        let lastSaveTime = new Date().toISOString();
         async function saveToStorage() {
             // 始终保存到localStorage作为备份
             localStorage.setItem('minisql_data', JSON.stringify(databases));
@@ -59,18 +60,34 @@
             
             // 通过后端API保存到本地文件
             try {
+                const saveTime = new Date().toISOString();
                 const response = await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         version: '1.0',
-                        lastModified: new Date().toISOString(),
+                        lastModified: saveTime,
                         databases: databases
                     })
                 });
                 if (response.ok) {
                     const result = await response.json();
+                    lastSaveTime = saveTime;
                     console.log('✅ 数据已保存到本地文件:', result.path);
+                } else if (response.status === 409) {
+                    const result = await response.json();
+                    console.warn('⚠️ 保存冲突:', result.error);
+                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击"确定"刷新页面加载最新数据，\n点击"取消"强制覆盖服务器数据。')) {
+                        location.reload();
+                    } else {
+                        // 强制保存
+                        lastSaveTime = new Date().toISOString();
+                        await fetch('/api/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ version: '1.0', lastModified: lastSaveTime, databases })
+                        });
+                    }
                 }
             } catch (e) {
                 console.log('后端API不可用，数据已保存到localStorage');
@@ -1578,8 +1595,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     case '>=': return rowVal >= compareVal;
                 }
             }
-            
-            return true;
+            return false;
         }
 
         function executeUpdate(sql) {
@@ -1595,19 +1611,41 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
             
-            // 解析 SET
-            const updates = {};
+            // 解析 SET (保存表达式字符串，每行单独计算)
+            const updateExprs = [];
             const setParts = setClause.split(',');
             for (const part of setParts) {
-                const [col, val] = part.split('=').map(s => s.trim());
-                updates[col] = parseValue(val);
+                const eqIdx = part.indexOf('=');
+                if (eqIdx === -1) throw new Error('SET 子句语法错误');
+                const col = part.substring(0, eqIdx).trim();
+                const expr = part.substring(eqIdx + 1).trim();
+                updateExprs.push({ col, expr });
+            }
+            
+            // 计算表达式值的函数
+            function evalExpr(expr, row) {
+                // 检查是否是算术表达式 (如 age+1, price*0.9)
+                const arithMatch = expr.match(/^(\w+)\s*([+\-*\/])\s*(\d+\.?\d*)$/);
+                if (arithMatch) {
+                    const colName = arithMatch[1];
+                    const op = arithMatch[2];
+                    const num = parseFloat(arithMatch[3]);
+                    const colVal = parseFloat(row[colName]) || 0;
+                    switch (op) {
+                        case '+': return colVal + num;
+                        case '-': return colVal - num;
+                        case '*': return colVal * num;
+                        case '/': return num !== 0 ? colVal / num : 0;
+                    }
+                }
+                return parseValue(expr);
             }
             
             let count = 0;
             for (const row of table.data) {
                 if (!whereClause || evaluateWhere(row, whereClause)) {
-                    for (const [col, val] of Object.entries(updates)) {
-                        row[col] = val;
+                    for (const { col, expr } of updateExprs) {
+                        row[col] = evalExpr(expr, row);
                     }
                     count++;
                 }
