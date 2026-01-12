@@ -59,6 +59,25 @@ ALTER TABLE users MODIFY name VARCHAR(200);
 ALTER TABLE users RENAME COLUMN name TO username;
 ```
 
+### 索引管理
+
+```sql
+-- 创建普通索引
+CREATE INDEX idx_name ON users (name);
+
+-- 创建唯一索引
+CREATE UNIQUE INDEX idx_email ON users (email);
+
+-- 创建复合索引
+CREATE INDEX idx_city_age ON users (city, age);
+
+-- 查看表的索引
+SHOW INDEXES FROM users;
+
+-- 删除索引
+DROP INDEX idx_name ON users;
+```
+
 ### DML (数据操作语言)
 
 ```sql
@@ -365,10 +384,15 @@ ROLLBACK;  -- 撤销删除
 
 ## 📄 版本信息
 
-- **版本**: 1.2
+- **版本**: 1.3
 - **更新日期**: 2026-01-12
 
 ### 更新日志
+
+**v1.3** (2026-01-12)
+- 新增索引管理: CREATE INDEX, DROP INDEX, SHOW INDEXES
+- 新增唯一索引和复合索引支持
+- 优化数据库/表选中点击范围
 
 **v1.2** (2026-01-12)
 - 新增 DISTINCT 去重查询

@@ -421,8 +421,8 @@
                 return;
             }
             container.innerHTML = dbNames.map(name => `
-                <div class="db-item ${currentDatabase === name ? 'active' : ''}">
-                    <span onclick="selectDatabase('${name}')">📁 ${name}</span>
+                <div class="db-item ${currentDatabase === name ? 'active' : ''}" onclick="selectDatabase('${name}')" style="cursor:pointer">
+                    <span>📁 ${name}</span>
                     <div class="item-actions">
                         <button onclick="event.stopPropagation();confirmDropDb('${name}')" title="删除">🗑</button>
                     </div>
@@ -442,8 +442,8 @@
                 return;
             }
             container.innerHTML = tables.map(name => `
-                <div class="table-item">
-                    <span onclick="quickSelectTable('${name}')">📋 ${name} <small style="color:#666">(${databases[currentDatabase].tables[name].data.length})</small></span>
+                <div class="table-item" onclick="quickSelectTable('${name}')" style="cursor:pointer">
+                    <span>📋 ${name} <small style="color:#666">(${databases[currentDatabase].tables[name].data.length})</small></span>
                     <div class="item-actions">
                         <button onclick="event.stopPropagation();openEditTable('${name}')" title="编辑">✏</button>
                         <button onclick="event.stopPropagation();confirmDropTable('${name}')" title="删除">🗑</button>
@@ -1061,6 +1061,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (upperSQL.startsWith('DELETE')) return executeDelete(sql);
             if (upperSQL.startsWith('ALTER TABLE')) return executeAlterTable(sql);
             if (upperSQL.startsWith('TRUNCATE')) return executeTruncate(sql);
+            // 索引
+            if (upperSQL.startsWith('CREATE INDEX') || upperSQL.startsWith('CREATE UNIQUE INDEX')) return executeCreateIndex(sql);
+            if (upperSQL.startsWith('DROP INDEX')) return executeDropIndex(sql);
+            if (upperSQL.startsWith('SHOW INDEX') || upperSQL.startsWith('SHOW INDEXES')) return executeShowIndexes(sql);
             throw new Error(`不支持的 SQL 语句: ${sql}`);
         }
 
@@ -1856,6 +1860,119 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             table.data = [];
             
             return { type: 'message', message: `成功清空表 '${tableName}'，删除 ${count} 行`, status: 'success' };
+        }
+
+        // ==================== 索引功能 ====================
+        function executeCreateIndex(sql) {
+            if (!currentDatabase) throw new Error('请先选择数据库');
+            
+            // CREATE [UNIQUE] INDEX idx_name ON table_name (col1, col2, ...)
+            const match = sql.match(/CREATE\s+(UNIQUE\s+)?INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(([^)]+)\)/i);
+            if (!match) throw new Error('CREATE INDEX 语法错误。格式: CREATE [UNIQUE] INDEX idx_name ON table (col1, col2)');
+            
+            const isUnique = !!match[1];
+            const indexName = match[2];
+            const tableName = match[3];
+            const columns = match[4].split(',').map(c => c.trim());
+            
+            const table = databases[currentDatabase].tables[tableName];
+            if (!table) throw new Error(`表 '${tableName}' 不存在`);
+            
+            // 验证列存在
+            for (const col of columns) {
+                if (!table.columns.find(c => c.name.toLowerCase() === col.toLowerCase())) {
+                    throw new Error(`列 '${col}' 不存在于表 '${tableName}'`);
+                }
+            }
+            
+            // 初始化索引存储
+            if (!table.indexes) table.indexes = {};
+            if (table.indexes[indexName]) throw new Error(`索引 '${indexName}' 已存在`);
+            
+            // 如果是唯一索引，检查数据唯一性
+            if (isUnique && table.data.length > 0) {
+                const seen = new Set();
+                for (const row of table.data) {
+                    const key = columns.map(c => row[c]).join('|');
+                    if (seen.has(key)) throw new Error(`无法创建唯一索引：列 (${columns.join(', ')}) 存在重复值`);
+                    seen.add(key);
+                }
+            }
+            
+            // 创建索引（构建B树模拟结构）
+            const indexData = {};
+            table.data.forEach((row, idx) => {
+                const key = columns.map(c => row[c]).join('|');
+                if (!indexData[key]) indexData[key] = [];
+                indexData[key].push(idx);
+            });
+            
+            table.indexes[indexName] = {
+                name: indexName,
+                columns: columns,
+                unique: isUnique,
+                data: indexData,
+                createdAt: new Date().toISOString()
+            };
+            
+            return { type: 'message', message: `成功创建${isUnique ? '唯一' : ''}索引 '${indexName}' ON ${tableName}(${columns.join(', ')})`, status: 'success' };
+        }
+        
+        function executeDropIndex(sql) {
+            if (!currentDatabase) throw new Error('请先选择数据库');
+            
+            // DROP INDEX idx_name ON table_name
+            const match = sql.match(/DROP\s+INDEX\s+(\w+)\s+ON\s+(\w+)/i);
+            if (!match) throw new Error('DROP INDEX 语法错误。格式: DROP INDEX idx_name ON table');
+            
+            const indexName = match[1];
+            const tableName = match[2];
+            
+            const table = databases[currentDatabase].tables[tableName];
+            if (!table) throw new Error(`表 '${tableName}' 不存在`);
+            if (!table.indexes || !table.indexes[indexName]) throw new Error(`索引 '${indexName}' 不存在`);
+            
+            delete table.indexes[indexName];
+            
+            return { type: 'message', message: `成功删除索引 '${indexName}'`, status: 'success' };
+        }
+        
+        function executeShowIndexes(sql) {
+            if (!currentDatabase) throw new Error('请先选择数据库');
+            
+            // SHOW INDEXES FROM table_name 或 SHOW INDEX FROM table_name
+            const match = sql.match(/SHOW\s+INDEX(?:ES)?\s+(?:FROM|ON)\s+(\w+)/i);
+            if (!match) throw new Error('SHOW INDEXES 语法错误。格式: SHOW INDEXES FROM table');
+            
+            const tableName = match[1];
+            const table = databases[currentDatabase].tables[tableName];
+            if (!table) throw new Error(`表 '${tableName}' 不存在`);
+            
+            const indexes = table.indexes || {};
+            const data = [];
+            
+            // 主键索引
+            const pkCol = table.columns.find(c => c.primaryKey);
+            if (pkCol) {
+                data.push({ Table: tableName, Index_name: 'PRIMARY', Unique: 'YES', Columns: pkCol.name, Type: 'BTREE' });
+            }
+            
+            // 用户创建的索引
+            for (const [name, idx] of Object.entries(indexes)) {
+                data.push({
+                    Table: tableName,
+                    Index_name: name,
+                    Unique: idx.unique ? 'YES' : 'NO',
+                    Columns: idx.columns.join(', '),
+                    Type: 'BTREE'
+                });
+            }
+            
+            if (data.length === 0) {
+                return { type: 'message', message: `表 '${tableName}' 没有索引`, status: 'info' };
+            }
+            
+            return { type: 'table', columns: ['Table', 'Index_name', 'Unique', 'Columns', 'Type'], data, message: `共 ${data.length} 个索引` };
         }
 
         // ==================== 结果展示 ====================
