@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "expectedVersion": "2026-01-12T13:37:34.819Z",
-  "lastModified": "2026-01-12T13:39:03.568Z",
+  "expectedVersion": "2026-01-12T14:25:31.005Z",
+  "lastModified": "2026-01-12T14:26:22.966Z",
   "databases": {
     "school": {
       "tables": {
@@ -216,6 +216,46 @@
             {
               "name": "pw_batch_1768222623903_368",
               "age": 75
+            },
+            {
+              "name": "noPopup_A",
+              "age": 1
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 78
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 70
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 71
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 71
+            },
+            {
+              "name": "staleReadFix_A",
+              "age": 1
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 70
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 60
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 61
+            },
+            {
+              "name": "pw_batch_1768222623903_368",
+              "age": 70
             }
           ]
         },

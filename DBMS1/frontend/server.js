@@ -65,6 +65,23 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // API: 获取服务器版本号（lastModified）用于读时过期检测
+    if (req.method === 'GET' && req.url.split('?')[0] === '/api/version') {
+        try {
+            let lastModified = null;
+            if (fs.existsSync(DATA_FILE)) {
+                const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+                lastModified = existing.lastModified || null;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, lastModified }));
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+        return;
+    }
+
     // API: 保存数据到本地文件（带文件锁）
     if (req.method === 'POST' && req.url === '/api/save') {
         let body = '';

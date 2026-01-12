@@ -22,13 +22,6 @@
             renderDatabaseList();
             renderTableList();
             updateStorageInfo();
-            const pendingMessage = sessionStorage.getItem('minisql_pending_message');
-            const pendingMessageType = sessionStorage.getItem('minisql_pending_message_type');
-            if (pendingMessage) {
-                showResult(pendingMessage, pendingMessageType || 'error');
-                sessionStorage.removeItem('minisql_pending_message');
-                sessionStorage.removeItem('minisql_pending_message_type');
-            }
             document.getElementById('sql-editor').addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); executeSQL(); }
             });
@@ -66,19 +59,22 @@
 
         // 保存到本地文件（通过后端API，带乐观锁冲突检测）
         // isWriteOperation: true表示写操作（需要版本检查），false表示读操作（跳过版本检查）
-        async function saveToStorage(isWriteOperation = true) {
+        async function saveToStorage(isWriteOperation = true, showFeedback = true) {
             // 始终保存到localStorage作为备份
             localStorage.setItem('minisql_data', JSON.stringify(databases));
             updateStorageInfo();
             
             // 读操作不需要同步到服务器文件（避免读-读冲突）
             if (!isWriteOperation) {
-                return;
+                return { ok: true, skipped: true };
             }
             
             // 通过后端API保存到本地文件（仅写操作）
             try {
-                const newVersion = new Date().toISOString();
+                let newVersion = new Date().toISOString();
+                if (serverVersion && newVersion === serverVersion) {
+                    newVersion = new Date(Date.now() + 1).toISOString();
+                }
                 const response = await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -94,44 +90,76 @@
                     try { result = await response.json(); } catch (e) {}
                     serverVersion = newVersion;  // 更新本地版本号
                     console.log('✅ 数据已保存到本地文件:', result && result.path ? result.path : '');
+                    return { ok: true, status: response.status };
                 } else if (response.status === 409) {
                     let result = null;
                     try { result = await response.json(); } catch (e) {}
                     const errorMessage = (result && result.error) ? result.error : '数据冲突：其他进程已修改数据，请刷新页面';
                     console.warn('⚠️ 保存冲突:', errorMessage);
-                    showResult(`错误: ${errorMessage}`, 'error');
-                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击"确定"刷新页面加载最新数据，\n点击"取消"强制覆盖服务器数据。')) {
-                        sessionStorage.setItem('minisql_pending_message', `错误: ${errorMessage}`);
-                        sessionStorage.setItem('minisql_pending_message_type', 'error');
-                        location.reload();
-                    } else {
-                        // 强制保存 - 跳过版本检查
-                        const forceVersion = new Date().toISOString();
-                        const forceResp = await fetch('/api/save', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ version: '1.0', forceWrite: true, lastModified: forceVersion, databases })
-                        });
-                        if (forceResp.ok) {
-                            serverVersion = forceVersion;
-                        } else {
-                            let forceResult = null;
-                            try { forceResult = await forceResp.json(); } catch (e) {}
-                            const forceErrorMessage = (forceResult && forceResult.error) ? forceResult.error : `强制保存失败 (HTTP ${forceResp.status})`;
-                            console.warn('⚠️ 强制保存失败:', forceErrorMessage);
-                            showResult(`错误: ${forceErrorMessage}`, 'error');
-                        }
-                    }
+                    if (showFeedback) showResult(`错误: ${errorMessage}`, 'error');
+                    return { ok: false, status: response.status, errorMessage };
                 } else {
                     let result = null;
                     try { result = await response.json(); } catch (e) {}
                     const errorMessage = (result && result.error) ? result.error : `保存失败 (HTTP ${response.status})`;
                     console.warn('⚠️ 保存失败:', errorMessage);
-                    showResult(`错误: ${errorMessage}`, 'error');
+                    if (showFeedback) showResult(`错误: ${errorMessage}`, 'error');
+                    return { ok: false, status: response.status, errorMessage };
                 }
             } catch (e) {
                 console.log('后端API不可用，数据已保存到localStorage');
-                showResult('错误: 后端API不可用，数据仅保存到localStorage', 'error');
+                if (showFeedback) showResult('错误: 后端API不可用，数据仅保存到localStorage', 'error');
+                return { ok: false, status: 0, errorMessage: '后端API不可用，数据仅保存到localStorage' };
+            }
+        }
+
+        async function getRemoteLastModified() {
+            try {
+                const resp = await fetch('/api/version?t=' + Date.now());
+                if (resp.ok) {
+                    const json = await resp.json();
+                    if (json && json.lastModified) return json.lastModified;
+                }
+            } catch (e) {}
+            try {
+                const resp = await fetch(DATA_FILE_PATH + '?t=' + Date.now());
+                if (resp.ok) {
+                    const json = await resp.json();
+                    if (json && json.lastModified) return json.lastModified;
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        async function ensureReadFresh() {
+            const remoteVersion = await getRemoteLastModified();
+            if (remoteVersion && serverVersion && remoteVersion !== serverVersion) {
+                throw new Error('数据已过期：检测到其他窗口已提交更新，请刷新页面后再查询');
+            }
+        }
+
+        function updateStorageInfo() {
+            const size = new Blob([JSON.stringify(databases)]).size;
+            const fileStatus = fileHandle ? ` | 📁 ${fileHandle.name}` : '';
+            const el = document.getElementById('storage-info');
+            if (el) el.textContent = `存储: ${(size/1024).toFixed(1)}KB${fileStatus}`;
+
+            const dbCountEl = document.getElementById('stat-db');
+            const tableCountEl = document.getElementById('stat-table');
+            const rowCountEl = document.getElementById('stat-rows');
+
+            if (dbCountEl && tableCountEl && rowCountEl) {
+                const dbCount = Object.keys(databases).length;
+                let tableCount = 0;
+                let rowCount = 0;
+                for (const db of Object.values(databases)) {
+                    const tables = Object.values(db.tables || {});
+                    tableCount += tables.length;
+                    for (const t of tables) rowCount += (t.data || []).length;
+                }
+                dbCountEl.textContent = dbCount;
+                tableCountEl.textContent = tableCount;
+                rowCountEl.textContent = rowCount;
             }
         }
 
@@ -156,24 +184,6 @@
                     showResult('绑定文件失败: ' + e.message, 'error');
                 }
             }
-        }
-
-        function updateStorageInfo() {
-            const size = new Blob([JSON.stringify(databases)]).size;
-            const fileStatus = fileHandle ? ` | 📁 ${fileHandle.name}` : '';
-            document.getElementById('storage-info').textContent = `存储: ${(size/1024).toFixed(1)}KB${fileStatus}`;
-            
-            // 更新统计卡片
-            const dbCount = Object.keys(databases).length;
-            let tableCount = 0, rowCount = 0;
-            for (const db of Object.values(databases)) {
-                const tables = Object.values(db.tables || {});
-                tableCount += tables.length;
-                for (const t of tables) rowCount += (t.data || []).length;
-            }
-            document.getElementById('stat-db').textContent = dbCount;
-            document.getElementById('stat-table').textContent = tableCount;
-            document.getElementById('stat-rows').textContent = rowCount;
         }
 
         // ==================== UI 渲染 ====================
@@ -397,6 +407,25 @@
             `).join('');
         }
         
+        function updateRefColumns(select) {
+            const row = select.parentElement;
+            const refTable = databases[currentDatabase].tables[select.value];
+            const refColSelect = row.querySelector('.fk-ref-column');
+            refColSelect.innerHTML = refTable.columns.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+        }
+        
+        function markFKDeleted(btn) {
+            const row = btn.parentElement;
+            if (row.dataset.fkNew) {
+                row.remove();
+            } else {
+                row.style.opacity = '0.3';
+                row.dataset.fkDeleted = 'true';
+                btn.textContent = '↩';
+                btn.onclick = () => { row.style.opacity = '1'; delete row.dataset.fkDeleted; btn.textContent = '×'; btn.onclick = () => markFKDeleted(btn); };
+            }
+        }
+
         function addEditFKRow() {
             const table = databases[currentDatabase].tables[editingTable];
             const otherTables = Object.keys(databases[currentDatabase].tables).filter(t => t !== editingTable);
@@ -431,25 +460,6 @@
             `;
         }
         
-        function updateRefColumns(select) {
-            const row = select.parentElement;
-            const refTable = databases[currentDatabase].tables[select.value];
-            const refColSelect = row.querySelector('.fk-ref-column');
-            refColSelect.innerHTML = refTable.columns.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-        }
-        
-        function markFKDeleted(btn) {
-            const row = btn.parentElement;
-            if (row.dataset.fkNew) {
-                row.remove();
-            } else {
-                row.style.opacity = '0.3';
-                row.dataset.fkDeleted = 'true';
-                btn.textContent = '↩';
-                btn.onclick = () => { row.style.opacity = '1'; delete row.dataset.fkDeleted; btn.textContent = '×'; btn.onclick = () => markFKDeleted(btn); };
-            }
-        }
-
         function addEditFieldRow() {
             const container = document.getElementById('edit-field-rows');
             container.innerHTML += `
@@ -848,7 +858,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                    upperSQL === 'ROLLBACK';
         }
         
-        function executeSQL() {
+        async function executeSQL() {
             let sql = document.getElementById('sql-editor').value.trim();
             if (!sql) { showResult('请输入 SQL 语句', 'error'); return; }
             // 将换行符和多余空格统一处理为单个空格，防止多行SQL拼接错误
@@ -856,16 +866,28 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const startTime = performance.now();
             try {
                 const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
-                let lastResult = null;
-                let totalInserted = 0, insertCount = 0;
                 let hasWriteOperation = false;
                 let hasTransactionControl = false;
+                let hasReadQuery = false;
                 for (const stmt of statements) {
                     const trimmedStmt = stmt.trim();
                     const upperStmt = trimmedStmt.toUpperCase();
+                    if (upperStmt.startsWith('SELECT') || upperStmt.startsWith('SHOW') || upperStmt.startsWith('DESC') || upperStmt.startsWith('DESCRIBE')) {
+                        hasReadQuery = true;
+                    }
                     if (upperStmt === 'COMMIT' || upperStmt === 'ROLLBACK') hasTransactionControl = true;
                     if (!isReadOnlySQL(trimmedStmt)) hasWriteOperation = true;
-                    const result = parseSingleSQL(trimmedStmt);
+                }
+                if (hasReadQuery && !hasWriteOperation && !inTransaction) {
+                    await ensureReadFresh();
+                }
+
+                let lastResult = null;
+                let totalInserted = 0, insertCount = 0;
+                for (const stmt of statements) {
+                    const trimmedStmt = stmt.trim();
+                    const upperStmt = trimmedStmt.toUpperCase();
+                    const result = await parseSingleSQL(trimmedStmt);
                     // 累计INSERT结果
                     if (result && result.message && result.message.includes('插入')) {
                         const match = result.message.match(/(\d+)/);
@@ -882,7 +904,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (lastResult) displayResult(lastResult);
                 // 事务中不同步到服务器，等COMMIT/ROLLBACK时再同步
                 // 只有写操作且不在事务中才同步到服务器
-                saveToStorage(hasWriteOperation && !inTransaction && !hasTransactionControl);
+                const saveResult = await saveToStorage(hasWriteOperation && !inTransaction && !hasTransactionControl);
+                if (saveResult && !saveResult.ok) {
+                    showResult(`错误: ${saveResult.errorMessage}`, 'error');
+                }
                 renderDatabaseList();
                 renderTableList();
                 // 添加到执行历史
@@ -927,12 +952,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             renderHistory();
         }
 
-        function parseSingleSQL(sql) {
+        async function parseSingleSQL(sql) {
             const upperSQL = sql.toUpperCase().trim();
             // 事务控制
             if (upperSQL === 'BEGIN' || upperSQL === 'START TRANSACTION' || upperSQL === 'BEGIN TRANSACTION') return executeBegin();
-            if (upperSQL === 'COMMIT') return executeCommit();
-            if (upperSQL === 'ROLLBACK') return executeRollback();
+            if (upperSQL === 'COMMIT') return await executeCommit();
+            if (upperSQL === 'ROLLBACK') return await executeRollback();
             // DDL
             if (upperSQL.startsWith('CREATE DATABASE')) return executeCreateDatabase(sql);
             if (upperSQL.startsWith('DROP DATABASE')) return executeDropDatabase(sql);
@@ -973,24 +998,30 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             return { type: 'message', message: '🔒 事务已开始 (BEGIN TRANSACTION) - 更改将暂存，需要COMMIT提交或ROLLBACK撤销', status: 'info' };
         }
 
-        function executeCommit() {
+        async function executeCommit() {
             if (!inTransaction) throw new Error('没有活动的事务');
+            // COMMIT时同步数据到服务器
+            const saveResult = await saveToStorage(true, false);
+            if (!saveResult || !saveResult.ok) {
+                return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '提交失败'}`, status: 'error' };
+            }
             inTransaction = false;
             transactionSnapshot = null;
             updateTransactionStatus();
-            // COMMIT时同步数据到服务器
-            saveToStorage(true);
             return { type: 'message', message: '✅ 事务已提交 (COMMIT) - 所有更改已永久保存', status: 'success' };
         }
 
-        function executeRollback() {
+        async function executeRollback() {
             if (!inTransaction) throw new Error('没有活动的事务');
             databases = transactionSnapshot; // 恢复快照
             inTransaction = false;
             transactionSnapshot = null;
             updateTransactionStatus();
             // ROLLBACK后同步恢复的数据到服务器
-            saveToStorage(true);
+            const saveResult = await saveToStorage(true, true);
+            if (!saveResult || !saveResult.ok) {
+                return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '回滚同步失败'}`, status: 'error' };
+            }
             return { type: 'message', message: '⏪ 事务已回滚 (ROLLBACK) - 所有更改已撤销，数据已恢复', status: 'warning' };
         }
 
