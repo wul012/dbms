@@ -1,49 +1,73 @@
 # MiniSQL 数据库管理系统
 
-> 数据库原理课程设计项目 - 基于Web的轻量级数据库管理系统
+> 数据库原理课程设计项目 - 基于 Web 的轻量级数据库管理系统
 
 ## 📋 项目概述
 
-MiniSQL 是一个纯前端实现的数据库管理系统，支持标准SQL语法，提供图形化界面进行数据库操作。数据持久化存储到本地JSON文件。
+MiniSQL 是一个完整的数据库管理系统，支持：
+- **Web图形界面** - 可视化操作数据库、表、外键
+- **命令行工具** - 支持交互式和批量执行SQL
+- **标准SQL语法** - DDL/DML/事务/索引/外键约束
+- **ER图可视化** - 自动生成实体关系图
+- **乐观锁机制** - 多进程并发写入冲突检测
+- **数据持久化** - JSON文件存储，支持导入导出
+
+---
 
 ## 🚀 快速开始
 
 ### 环境要求
-- Node.js 14+
-- 现代浏览器 (Chrome 86+, Firefox, Edge)
+- **Node.js** 14+
+- **浏览器** Chrome 86+ / Firefox / Edge
 
-### 启动服务器
+### 启动Web服务器
 
 ```bash
 cd frontend
 node server.js
 ```
 
-服务器启动后访问: **http://localhost:8080**
+访问: **http://localhost:8080**
 
-### 数据存储位置
+### 命令行工具
+
+```bash
+# 交互模式
+node cli.js
+
+# 指定数据库
+node cli.js -d testdb
+
+# 直接执行SQL
+node cli.js -e "SHOW DATABASES"
+node cli.js -d testdb -e "SELECT * FROM users"
+```
+
+### 数据存储
 
 ```
 frontend/data/minisql_data.json
 ```
 
+---
+
 ## ✨ 功能特性
 
-### DDL (数据定义语言)
+### 1. DDL (数据定义语言)
 
 | 命令 | 语法 | 说明 |
-|-----|------|-----|
+|------|------|------|
 | 创建数据库 | `CREATE DATABASE db_name;` | 创建新数据库 |
-| 删除数据库 | `DROP DATABASE db_name;` | 删除数据库及其所有表 |
+| 删除数据库 | `DROP DATABASE db_name;` | 删除数据库及所有表 |
 | 切换数据库 | `USE db_name;` | 切换当前数据库 |
 | 查看数据库 | `SHOW DATABASES;` | 列出所有数据库 |
-| 创建表 | `CREATE TABLE t (col1 INT, col2 VARCHAR(50));` | 创建数据表 |
-| 删除表 | `DROP TABLE t;` | 删除数据表 |
+| 创建表 | `CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(50));` | 创建表 |
+| 删除表 | `DROP TABLE t;` | 删除表 |
 | 重命名表 | `RENAME TABLE old TO new;` | 重命名表 |
-| 查看表 | `SHOW TABLES;` | 列出当前数据库所有表 |
+| 查看表 | `SHOW TABLES;` | 列出当前库所有表 |
 | 表结构 | `DESC table_name;` | 查看表结构 |
 
-### ALTER TABLE (表结构修改)
+### 2. ALTER TABLE (表结构修改)
 
 ```sql
 -- 添加字段
@@ -413,57 +437,84 @@ DELETE FROM students WHERE id = 3;
 ROLLBACK;  -- 撤销删除
 ```
 
-## 🛠️ 技术栈
+## � 并发控制
 
-- **前端**: HTML5, CSS3, JavaScript (原生)
-- **后端**: Node.js (原生HTTP模块)
-- **存储**: JSON文件 + localStorage
+### 乐观锁机制
+
+系统采用乐观锁防止多进程并发写入冲突：
+
+1. **加载时**：记录服务器数据版本号
+2. **保存时**：发送版本号给服务器比对
+3. **版本不匹配**：返回409冲突，提示用户刷新或强制覆盖
+
+### 文件锁
+
+服务器端使用文件锁（`.minisql.lock`）防止同时写入，锁超时5秒自动释放。
+
+---
+
+## �🛠️ 技术栈
+
+| 组件 | 技术 |
+|------|------|
+| 前端 | HTML5, CSS3, JavaScript (原生) |
+| 后端 | Node.js (原生HTTP模块) |
+| 存储 | JSON文件 + localStorage |
+| 并发控制 | 乐观锁 + 文件锁 |
+
+## 📂 文件结构
+
+```
+frontend/
+├── index.html      # 主页面
+├── styles.css      # 样式文件
+├── app.js          # 前端逻辑
+├── server.js       # Node.js 服务器
+├── cli.js          # 命令行工具
+├── data/
+│   └── minisql_data.json   # 数据存储
+└── README.md       # 说明文档
+```
 
 ## 📄 版本信息
 
-- **版本**: 1.4
+- **版本**: 1.5
 - **更新日期**: 2026-01-12
 
 ### 更新日志
 
+**v1.5** (2026-01-12)
+- 新增命令行工具 cli.js（交互模式 + 批量执行）
+- 新增乐观锁并发写入冲突检测
+- 新增文件锁机制防止同时写入
+- 修复 UPDATE SET col = col + 1 表达式计算
+- 修复多行SQL换行符拼接问题
+- 修复多条INSERT语句结果显示
+- 前端样式优化（渐变背景、毛玻璃效果）
+- 代码重构：分离 HTML/CSS/JS 文件
+
 **v1.4** (2026-01-12)
 - 新增完整外键约束支持
-- 新增 CREATE TABLE ... FOREIGN KEY 语法
-- 新增 ALTER TABLE ADD/DROP FOREIGN KEY
-- 新增 SHOW FOREIGN KEYS 命令
-- 新增 INSERT 外键约束验证
-- 新增 DELETE 外键引用保护
+- 新增可视化外键管理界面
+- 新增 ER图外键关系连线
 - 支持 ON DELETE/UPDATE 动作
-- 外键约束持久化到JSON
 
 **v1.3** (2026-01-12)
 - 新增索引管理: CREATE INDEX, DROP INDEX, SHOW INDEXES
 - 新增唯一索引和复合索引支持
-- 优化数据库/表选中点击范围
 
 **v1.2** (2026-01-12)
-- 新增 DISTINCT 去重查询
-- 新增 BETWEEN 范围查询
-- 新增 IN/NOT IN 集合查询
-- 新增 LIMIT OFFSET 分页查询
-- 新增查询结果导出CSV功能
-- 新增数据统计卡片
-- 新增 ER图可视化（外键连线）
-- 优化表数据快速预览
+- 新增聚合函数和GROUP BY
+- 新增DISTINCT/BETWEEN/IN查询
+- 新增CSV导出和ER图
 
 **v1.1** (2026-01-12)
-- 新增聚合函数: COUNT, SUM, AVG, MAX, MIN
-- 新增 GROUP BY 分组查询
-- 新增 HAVING 分组过滤
-- 新增 LIKE 模糊查询
-- 新增执行历史记录功能
+- 新增LIKE模糊查询
+- 新增执行历史记录
 
 **v1.0** (2026-01-12)
-- 基础DDL/DML支持
-- JOIN多表查询
-- 事务支持
-- 本地文件存储
+- 基础DDL/DML/JOIN/事务支持
 
 ---
 
-**作者**: 数据库原理课程设计
+**课程**: 数据库原理课程设计

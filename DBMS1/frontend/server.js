@@ -82,18 +82,19 @@ const server = http.createServer((req, res) => {
                 }
                 
                 try {
-                    // 版本检查：如果文件存在，比较lastModified防止覆盖更新的数据
-                    if (fs.existsSync(DATA_FILE) && data.lastModified) {
+                    // 乐观锁版本检查：比较客户端的expectedVersion和服务器当前版本
+                    if (!data.forceWrite && fs.existsSync(DATA_FILE) && data.expectedVersion) {
                         const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-                        if (existing.lastModified && new Date(existing.lastModified) > new Date(data.lastModified)) {
+                        if (existing.lastModified && existing.lastModified !== data.expectedVersion) {
                             releaseLock();
                             res.writeHead(409, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({ 
                                 success: false, 
-                                error: '数据冲突：服务器上有更新的版本，请刷新页面',
-                                serverVersion: existing.lastModified 
+                                error: '数据冲突：其他进程已修改数据，请刷新页面',
+                                serverVersion: existing.lastModified,
+                                clientVersion: data.expectedVersion
                             }));
-                            console.log('⚠️ 版本冲突：服务器数据更新');
+                            console.log('⚠️ 乐观锁冲突: 客户端版本', data.expectedVersion, '服务器版本', existing.lastModified);
                             return;
                         }
                     }
@@ -101,7 +102,7 @@ const server = http.createServer((req, res) => {
                     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ success: true, message: '数据已保存到本地文件', path: DATA_FILE }));
-                    console.log('✅ 数据已保存:', DATA_FILE);
+                    console.log('✅ 数据已保存:', DATA_FILE, '版本:', data.lastModified);
                 } finally {
                     releaseLock();
                 }

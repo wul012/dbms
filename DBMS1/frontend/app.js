@@ -12,6 +12,9 @@
         // ==================== 执行历史 ====================
         let sqlHistory = JSON.parse(localStorage.getItem('sql_history') || '[]');
 
+        // ==================== 乐观锁版本号 ====================
+        let serverVersion = null;
+
         // ==================== 初始化 ====================
         async function init() {
             // 优先从本地文件加载，其次从localStorage
@@ -34,9 +37,11 @@
                     const data = await response.json();
                     if (data.databases && Object.keys(data.databases).length > 0) {
                         databases = data.databases;
+                        // 记录服务器版本号用于乐观锁
+                        serverVersion = data.lastModified || new Date().toISOString();
                         // 同步到localStorage，确保一致性
                         localStorage.setItem('minisql_data', JSON.stringify(databases));
-                        console.log('✅ 数据已从本地文件加载:', DATA_FILE_PATH);
+                        console.log('✅ 数据已从本地文件加载:', DATA_FILE_PATH, '版本:', serverVersion);
                         return;
                     }
                 }
@@ -47,12 +52,12 @@
             const saved = localStorage.getItem('minisql_data');
             if (saved) {
                 databases = JSON.parse(saved);
+                serverVersion = new Date().toISOString();
                 console.log('✅ 数据已从localStorage加载');
             }
         }
 
-        // 保存到本地文件（通过后端API，带冲突检测）
-        let lastSaveTime = new Date().toISOString();
+        // 保存到本地文件（通过后端API，带乐观锁冲突检测）
         async function saveToStorage() {
             // 始终保存到localStorage作为备份
             localStorage.setItem('minisql_data', JSON.stringify(databases));
@@ -60,33 +65,35 @@
             
             // 通过后端API保存到本地文件
             try {
-                const saveTime = new Date().toISOString();
+                const newVersion = new Date().toISOString();
                 const response = await fetch('/api/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         version: '1.0',
-                        lastModified: saveTime,
+                        expectedVersion: serverVersion,  // 发送加载时的版本号
+                        lastModified: newVersion,
                         databases: databases
                     })
                 });
                 if (response.ok) {
                     const result = await response.json();
-                    lastSaveTime = saveTime;
+                    serverVersion = newVersion;  // 更新本地版本号
                     console.log('✅ 数据已保存到本地文件:', result.path);
                 } else if (response.status === 409) {
                     const result = await response.json();
                     console.warn('⚠️ 保存冲突:', result.error);
-                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击"确定"刷新页面加载最新数据，\n点击"取消"强制覆盖服务器数据。')) {
+                    if (confirm('检测到数据冲突：其他进程已修改数据。\n\n点击“确定”刷新页面加载最新数据，\n点击“取消”强制覆盖服务器数据。')) {
                         location.reload();
                     } else {
-                        // 强制保存
-                        lastSaveTime = new Date().toISOString();
+                        // 强制保存 - 跳过版本检查
+                        const forceVersion = new Date().toISOString();
                         await fetch('/api/save', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ version: '1.0', lastModified: lastSaveTime, databases })
+                            body: JSON.stringify({ version: '1.0', forceWrite: true, lastModified: forceVersion, databases })
                         });
+                        serverVersion = forceVersion;
                     }
                 }
             } catch (e) {
@@ -793,14 +800,27 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
         // ==================== SQL 解析器 ====================
         function executeSQL() {
-            const sql = document.getElementById('sql-editor').value.trim();
+            let sql = document.getElementById('sql-editor').value.trim();
             if (!sql) { showResult('请输入 SQL 语句', 'error'); return; }
+            // 将换行符和多余空格统一处理为单个空格，防止多行SQL拼接错误
+            sql = sql.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
             const startTime = performance.now();
             try {
                 const statements = sql.split(';').filter(s => s.trim() && !s.trim().startsWith('--'));
                 let lastResult = null;
+                let totalInserted = 0, insertCount = 0;
                 for (const stmt of statements) {
-                    lastResult = parseSingleSQL(stmt.trim());
+                    const result = parseSingleSQL(stmt.trim());
+                    // 累计INSERT结果
+                    if (result && result.message && result.message.includes('插入')) {
+                        const match = result.message.match(/(\d+)/);
+                        if (match) { totalInserted += parseInt(match[1]); insertCount++; }
+                    }
+                    lastResult = result;
+                }
+                // 如果有多条INSERT，显示汇总结果
+                if (insertCount > 1 && lastResult) {
+                    lastResult.message = `成功执行 ${insertCount} 条INSERT语句，共插入 ${totalInserted} 行数据`;
                 }
                 const endTime = performance.now();
                 document.getElementById('exec-time').textContent = `执行耗时: ${(endTime - startTime).toFixed(2)}ms`;
