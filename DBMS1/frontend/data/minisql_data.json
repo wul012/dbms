@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "expectedVersion": "2026-01-12T14:25:31.005Z",
-  "lastModified": "2026-01-12T14:26:22.966Z",
+  "expectedVersion": "2026-01-13T04:29:01.183Z",
+  "lastModified": "2026-01-13T04:30:09.105Z",
   "databases": {
     "school": {
       "tables": {
@@ -700,6 +700,467 @@
           ],
           "indexes": {},
           "data": []
+        }
+      }
+    },
+    "test1": {
+      "tables": {
+        "users": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "age",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR",
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "country",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": [
+            {
+              "id": 1,
+              "name": "张三",
+              "age": 25,
+              "email": "zhangsan@example.com",
+              "status": "active",
+              "city": "Beijing",
+              "country": "China"
+            },
+            {
+              "id": 2,
+              "name": "李四",
+              "age": 21,
+              "email": null,
+              "status": "pending",
+              "city": "Shanghai",
+              "country": "China"
+            },
+            {
+              "id": 3,
+              "name": "王明",
+              "age": 32,
+              "email": "wangming@example.com",
+              "status": "inactive",
+              "city": "Shenzhen",
+              "country": "China"
+            }
+          ]
+        },
+        "products": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "price",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "stock",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "category_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "category",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": [
+            {
+              "id": 1,
+              "name": "Keyboard",
+              "price": 199,
+              "stock": 50,
+              "category_id": 1,
+              "category": "A"
+            },
+            {
+              "id": 2,
+              "name": "Mouse",
+              "price": 99,
+              "stock": 120,
+              "category_id": 1,
+              "category": "A"
+            },
+            {
+              "id": 3,
+              "name": "Monitor",
+              "price": 599,
+              "stock": 30,
+              "category_id": 2,
+              "category": "B"
+            },
+            {
+              "id": 4,
+              "name": "Laptop",
+              "price": 1299,
+              "stock": 15,
+              "category_id": 2,
+              "category": "B"
+            },
+            {
+              "id": 5,
+              "name": "Desk",
+              "price": 899,
+              "stock": 10,
+              "category_id": 5,
+              "category": "C"
+            }
+          ]
+        },
+        "orders": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "user_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "product_id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "product",
+              "type": "VARCHAR",
+              "size": 100,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "amount",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [
+            {
+              "name": "fk_orders_user_id",
+              "column": "user_id",
+              "refTable": "users",
+              "refColumn": "id",
+              "onDelete": "RESTRICT",
+              "onUpdate": "RESTRICT"
+            }
+          ],
+          "indexes": {},
+          "data": [
+            {
+              "id": 1,
+              "user_id": 1,
+              "product_id": 1,
+              "product": "Keyboard",
+              "amount": 199,
+              "status": "completed"
+            },
+            {
+              "id": 2,
+              "user_id": 2,
+              "product_id": 2,
+              "product": "Mouse",
+              "amount": 99,
+              "status": "pending"
+            },
+            {
+              "id": 3,
+              "user_id": 1,
+              "product_id": 3,
+              "product": "Monitor",
+              "amount": 599,
+              "status": "cancelled"
+            }
+          ]
+        },
+        "employees": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "name",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "department",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "salary",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": [
+            {
+              "id": 1,
+              "name": "Alice",
+              "department": "IT",
+              "salary": 12000
+            },
+            {
+              "id": 2,
+              "name": "Bob",
+              "department": "IT",
+              "salary": 15000
+            },
+            {
+              "id": 3,
+              "name": "Carol",
+              "department": "HR",
+              "salary": 9000
+            }
+          ]
+        },
+        "customers": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "INT",
+              "size": null,
+              "primaryKey": true,
+              "autoIncrement": false,
+              "notNull": true,
+              "default": null
+            },
+            {
+              "name": "city",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "country",
+              "type": "VARCHAR",
+              "size": 50,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": [
+            {
+              "id": 1,
+              "city": "Beijing",
+              "country": "China"
+            },
+            {
+              "id": 2,
+              "city": "Tokyo",
+              "country": "Japan"
+            },
+            {
+              "id": 3,
+              "city": "Beijing",
+              "country": "China"
+            }
+          ]
+        }
+      }
+    },
+    "test": {
+      "tables": {
+        "products": {
+          "columns": [
+            {
+              "name": "category",
+              "type": "VARCHAR",
+              "size": 20,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            },
+            {
+              "name": "price",
+              "type": "INT",
+              "size": null,
+              "primaryKey": false,
+              "autoIncrement": false,
+              "notNull": false,
+              "default": null
+            }
+          ],
+          "foreignKeys": [],
+          "indexes": {},
+          "data": [
+            {
+              "category": "A",
+              "price": 10
+            },
+            {
+              "category": "A",
+              "price": 20
+            },
+            {
+              "category": "B",
+              "price": 5
+            },
+            {
+              "category": "B",
+              "price": 7
+            },
+            {
+              "category": "C",
+              "price": 100
+            }
+          ]
         }
       }
     }

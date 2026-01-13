@@ -49,6 +49,16 @@ node cli.js -d testdb -e "SELECT * FROM users"
 frontend/data/minisql_data.json
 ```
 
+### 示例数据库（README 可直接运行）
+
+项目默认数据文件中已预置示例数据库 **test1**（包含 `users/products/orders/employees/customers` 等表及少量样例数据）。
+
+运行 README 中的查询示例前，请先执行：
+
+```sql
+USE test1;
+```
+
 ---
 
 ## ✨ 功能特性
@@ -142,6 +152,8 @@ ALTER TABLE orders DROP FOREIGN KEY fk_user;
 ### DML (数据操作语言)
 
 ```sql
+USE test1;
+
 -- 插入数据
 INSERT INTO users (id, name, age) VALUES (1, '张三', 25);
 
@@ -161,12 +173,14 @@ TRUNCATE TABLE users;
 ### 聚合函数
 
 ```sql
+USE test1;
+
 -- COUNT 计数
 SELECT COUNT(*) AS total FROM users;
 SELECT COUNT(email) AS has_email FROM users;
 
 -- SUM 求和
-SELECT SUM(price) AS total_price FROM orders;
+SELECT SUM(amount) AS total_price FROM orders;
 
 -- AVG 平均值
 SELECT AVG(age) AS avg_age FROM users;
@@ -181,6 +195,8 @@ SELECT COUNT(*) AS cnt, SUM(amount) AS total, AVG(amount) AS avg FROM orders;
 ### GROUP BY 分组查询
 
 ```sql
+USE test1;
+
 -- 按分类分组统计
 SELECT category, COUNT(*) AS cnt FROM products GROUP BY category;
 
@@ -200,6 +216,8 @@ ORDER BY total DESC;
 ### LIKE 模糊查询
 
 ```sql
+USE test1;
+
 -- % 匹配任意字符
 SELECT * FROM users WHERE name LIKE '张%';     -- 以"张"开头
 SELECT * FROM users WHERE name LIKE '%三';     -- 以"三"结尾
@@ -212,6 +230,8 @@ SELECT * FROM users WHERE name LIKE '张_';     -- "张"后跟一个字符
 ### DISTINCT 去重查询
 
 ```sql
+USE test1;
+
 -- 查询不重复的值
 SELECT DISTINCT category FROM products;
 SELECT DISTINCT city, country FROM customers;
@@ -220,16 +240,20 @@ SELECT DISTINCT city, country FROM customers;
 ### BETWEEN 范围查询
 
 ```sql
+USE test1;
+
 -- 数值范围
 SELECT * FROM products WHERE price BETWEEN 100 AND 500;
 
 -- 结合其他条件
-SELECT * FROM orders WHERE amount BETWEEN 1000 AND 5000 AND status = 'completed';
+SELECT * FROM orders WHERE amount BETWEEN 100 AND 500 AND status = 'completed';
 ```
 
 ### IN 集合查询
 
 ```sql
+USE test1;
+
 -- IN 包含
 SELECT * FROM users WHERE status IN ('active', 'pending');
 SELECT * FROM products WHERE category_id IN (1, 2, 5);
@@ -241,6 +265,8 @@ SELECT * FROM orders WHERE status NOT IN ('cancelled', 'refunded');
 ### LIMIT OFFSET 分页查询
 
 ```sql
+USE test1;
+
 -- 限制返回条数
 SELECT * FROM products LIMIT 10;
 
@@ -254,6 +280,8 @@ SELECT * FROM users LIMIT 10 OFFSET 20;
 ### JOIN 多表查询
 
 ```sql
+USE test1;
+
 -- 内连接
 SELECT u.name, o.product 
 FROM users u 

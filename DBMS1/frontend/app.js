@@ -1468,6 +1468,21 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     colDefs.push({ type: 'col', col: colName });
                 }
             }
+
+            const requiredAggMap = new Map();
+            for (const def of colDefs) {
+                if (def.type === 'agg') {
+                    requiredAggMap.set(`${def.func}(${def.col})`, { func: def.func, col: def.col });
+                }
+            }
+            if (havingClause) {
+                const re = /\b(COUNT|SUM|AVG|MAX|MIN)\s*\(\s*(\*|\w+)\s*\)/ig;
+                let m;
+                while ((m = re.exec(havingClause)) !== null) {
+                    const key = `${m[1].toUpperCase()}(${m[2]})`;
+                    requiredAggMap.set(key, { func: m[1].toUpperCase(), col: m[2] });
+                }
+            }
             
             let result = [];
             
@@ -1486,11 +1501,16 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     const newRow = {};
                     const keyParts = key.split('|||');
                     groupCols.forEach((c, i) => newRow[c] = keyParts[i]);
-                    
+
+                    for (const [exprKey, def] of requiredAggMap.entries()) {
+                        let v = aggregateFuncs[def.func](groupData, def.col);
+                        if (def.func === 'AVG') v = Number(v.toFixed(2));
+                        newRow[exprKey] = v;
+                    }
                     for (const def of colDefs) {
                         if (def.type === 'agg') {
-                            newRow[def.alias] = aggregateFuncs[def.func](groupData, def.col);
-                            if (def.func === 'AVG') newRow[def.alias] = Number(newRow[def.alias].toFixed(2));
+                            const exprKey = `${def.func}(${def.col})`;
+                            newRow[def.alias] = newRow[exprKey];
                         }
                     }
                     result.push(newRow);
@@ -1503,10 +1523,15 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             } else {
                 // 无分组，整表聚合
                 const newRow = {};
+                for (const [exprKey, def] of requiredAggMap.entries()) {
+                    let v = aggregateFuncs[def.func](data, def.col);
+                    if (def.func === 'AVG') v = Number(v.toFixed(2));
+                    newRow[exprKey] = v;
+                }
                 for (const def of colDefs) {
                     if (def.type === 'agg') {
-                        newRow[def.alias] = aggregateFuncs[def.func](data, def.col);
-                        if (def.func === 'AVG') newRow[def.alias] = Number(newRow[def.alias].toFixed(2));
+                        const exprKey = `${def.func}(${def.col})`;
+                        newRow[def.alias] = newRow[exprKey];
                     }
                 }
                 result.push(newRow);
@@ -1649,50 +1674,61 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // 支持 =, !=, <>, <, >, <=, >=, LIKE, BETWEEN, IN
             let match;
             
+            const resolveKey = (raw) => {
+                const trimmed = raw.trim();
+                const agg = normalizeAggExpr(trimmed);
+                return agg || trimmed;
+            };
+
+            const resolveVal = (raw) => {
+                const key = resolveKey(raw);
+                return row[key];
+            };
+            
             // BETWEEN ... AND ...
-            match = condition.match(/(\w+)\s+BETWEEN\s+(.+?)\s+AND\s+(.+)/i);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+BETWEEN\s+(.+?)\s+AND\s+(.+)/i);
             if (match) {
-                const val = row[match[1]];
+                const val = resolveVal(match[1]);
                 const min = parseValue(match[2].trim());
                 const max = parseValue(match[3].trim());
                 return val >= min && val <= max;
             }
             
             // IN (val1, val2, ...)
-            match = condition.match(/(\w+)\s+IN\s*\(([^)]+)\)/i);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IN\s*\(([^)]+)\)/i);
             if (match) {
-                const val = row[match[1]];
+                const val = resolveVal(match[1]);
                 const values = match[2].split(',').map(v => parseValue(v.trim()));
                 return values.some(v => v == val);
             }
             
             // NOT IN (val1, val2, ...)
-            match = condition.match(/(\w+)\s+NOT\s+IN\s*\(([^)]+)\)/i);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+NOT\s+IN\s*\(([^)]+)\)/i);
             if (match) {
-                const val = row[match[1]];
+                const val = resolveVal(match[1]);
                 const values = match[2].split(',').map(v => parseValue(v.trim()));
                 return !values.some(v => v == val);
             }
             
             // LIKE
-            match = condition.match(/(\w+)\s+LIKE\s+'([^']+)'/i);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+LIKE\s+'([^']+)'/i);
             if (match) {
-                const val = row[match[1]];
+                const val = resolveVal(match[1]);
                 const pattern = match[2].replace(/%/g, '.*').replace(/_/g, '.');
                 return new RegExp(`^${pattern}$`, 'i').test(val);
             }
             
             // IS NULL / IS NOT NULL
-            match = condition.match(/(\w+)\s+IS\s+(NOT\s+)?NULL/i);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IS\s+(NOT\s+)?NULL/i);
             if (match) {
-                const val = row[match[1]];
+                const val = resolveVal(match[1]);
                 return match[2] ? val !== null && val !== undefined : val === null || val === undefined;
             }
             
             // 比较运算符
-            match = condition.match(/(\w+)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)/);
+            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s*(=|!=|<>|<=|>=|<|>)\s*(.+)/);
             if (match) {
-                const colName = match[1];
+                const colName = resolveKey(match[1]);
                 const op = match[2];
                 const compareVal = parseValue(match[3].trim());
                 const rowVal = row[colName];
@@ -1708,6 +1744,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 }
             }
             return false;
+        }
+
+        function normalizeAggExpr(expr) {
+            const m = expr.trim().match(/^(COUNT|SUM|AVG|MAX|MIN)\s*\(\s*(\*|\w+)\s*\)$/i);
+            if (!m) return null;
+            return `${m[1].toUpperCase()}(${m[2]})`;
         }
 
         function executeUpdate(sql) {
