@@ -362,20 +362,15 @@
 
             const dbCountEl = document.getElementById('stat-db');
             const tableCountEl = document.getElementById('stat-table');
-            const rowCountEl = document.getElementById('stat-rows');
 
-            if (dbCountEl && tableCountEl && rowCountEl) {
+            if (dbCountEl && tableCountEl) {
                 const dbCount = Object.keys(databases).length;
                 let tableCount = 0;
-                let rowCount = 0;
                 for (const db of Object.values(databases)) {
-                    const tables = Object.values(db.tables || {});
-                    tableCount += tables.length;
-                    for (const t of tables) rowCount += (t.data || []).length;
+                    tableCount += Object.keys(db.tables || {}).length;
                 }
                 dbCountEl.textContent = dbCount;
                 tableCountEl.textContent = tableCount;
-                rowCountEl.textContent = rowCount;
             }
         }
 
@@ -567,24 +562,14 @@
             container.innerHTML = table.columns.map((col, i) => `
                 <div class="field-row" data-original="${col.name}">
                     <input type="text" value="${col.name}" class="edit-fname">
-                    <select class="edit-ftype">
-                        <option value="INT" ${col.type==='INT'?'selected':''}>INT</option>
-                        <option value="VARCHAR" ${col.type==='VARCHAR'?'selected':''}>VARCHAR</option>
-                        <option value="TEXT" ${col.type==='TEXT'?'selected':''}>TEXT</option>
-                        <option value="FLOAT" ${col.type==='FLOAT'?'selected':''}>FLOAT</option>
-                        <option value="DOUBLE" ${col.type==='DOUBLE'?'selected':''}>DOUBLE</option>
-                        <option value="DATETIME" ${col.type==='DATETIME'?'selected':''}>DATETIME</option>
-                        <option value="DATE" ${col.type==='DATE'?'selected':''}>DATE</option>
-                        <option value="BOOLEAN" ${col.type==='BOOLEAN'?'selected':''}>BOOLEAN</option>
-                    </select>
-                    <input type="number" value="${col.size||''}" class="edit-fsize">
-                    <input type="checkbox" ${col.primaryKey?'checked':''} class="edit-fpk">
-                    <input type="checkbox" ${col.notNull?'checked':''} class="edit-fnn">
+                    <span style="color:#666;font-size:12px">${col.type}</span>
+                    <span style="color:#666;font-size:12px">${col.size || '-'}</span>
+                    <span style="color:#666;font-size:12px">${col.primaryKey ? '✓' : '-'}</span>
+                    <span style="color:#666;font-size:12px">${col.notNull ? '✓' : '-'}</span>
                     <button class="btn btn-xs btn-danger" onclick="markFieldDeleted(this)">×</button>
                 </div>
             `).join('');
             
-            // 渲染外键列表
             renderEditFKRows(tableName);
             showModal('edit-table-modal');
         }
@@ -727,12 +712,12 @@
             const sqls = [];
             rows.forEach(row => {
                 const fname = row.querySelector('.edit-fname').value.trim();
-                const ftype = row.querySelector('.edit-ftype').value;
-                const fsize = row.querySelector('.edit-fsize').value;
                 
                 if (row.dataset.deleted) {
                     sqls.push(`ALTER TABLE ${editingTable} DROP COLUMN ${row.dataset.original}`);
                 } else if (row.dataset.new && fname) {
+                    const ftype = row.querySelector('.edit-ftype') ? row.querySelector('.edit-ftype').value : '';
+                    const fsize = row.querySelector('.edit-fsize') ? row.querySelector('.edit-fsize').value : '';
                     sqls.push(`ALTER TABLE ${editingTable} ADD ${fname} ${ftype}${fsize ? `(${fsize})` : ''}`);
                 } else if (row.dataset.original && fname !== row.dataset.original) {
                     sqls.push(`ALTER TABLE ${editingTable} RENAME COLUMN ${row.dataset.original} TO ${fname}`);
