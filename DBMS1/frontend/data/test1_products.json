@@ -1,0 +1,45 @@
+{
+  "version": "2026-01-13T07:13:26.069Z",
+  "data": [
+    {
+      "id": 1,
+      "name": "Keyboard",
+      "price": 199,
+      "stock": 50,
+      "category_id": 1,
+      "category": "A"
+    },
+    {
+      "id": 2,
+      "name": "Mouse",
+      "price": 99,
+      "stock": 120,
+      "category_id": 1,
+      "category": "A"
+    },
+    {
+      "id": 3,
+      "name": "Monitor",
+      "price": 599,
+      "stock": 30,
+      "category_id": 2,
+      "category": "B"
+    },
+    {
+      "id": 4,
+      "name": "Laptop",
+      "price": 1299,
+      "stock": 15,
+      "category_id": 2,
+      "category": "B"
+    },
+    {
+      "id": 5,
+      "name": "Desk",
+      "price": 899,
+      "stock": 10,
+      "category_id": 5,
+      "category": "C"
+    }
+  ]
+}

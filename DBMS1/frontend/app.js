@@ -1,18 +1,25 @@
 // ==================== 数据库存储结构 ====================
-        let databases = {};
+        let databases = {}; // 只存储元数据：{ dbName: { tables: { tableName: { columns, foreignKeys, indexes } } } }
+        let tableData = {}; // 按需加载的表数据：{ 'dbName.tableName': { data: [...], version: 'v1' } }
         let currentDatabase = null;
         let editingTable = null;
         let fileHandle = null; // 本地文件句柄
         const DATA_FILE_PATH = 'data/minisql_data.json';
+        let useTableStorage = false;
         
         // ==================== 事务支持 ====================
         let inTransaction = false;
         let transactionSnapshot = null; // 事务开始时的数据快照
+        let transactionSnapshotTableData = null;
+        let transactionSnapshotTableVersions = null;
+        let transactionModifiedTables = new Set(); // 事务期间修改的表
         
         // ==================== 执行历史 ====================
         let sqlHistory = JSON.parse(localStorage.getItem('sql_history') || '[]');
 
-        // ==================== 乐观锁版本号 ====================
+        // ==================== 表级版本号 ====================
+        let tableVersions = {}; // { 'dbName.tableName': 'version' }
+        // 兼容旧版全局版本号
         let serverVersion = null;
 
         // ==================== 初始化 ====================
@@ -30,28 +37,60 @@
 
         // 从本地文件加载数据
         async function loadFromLocalFile() {
+            // 优先尝试分库分表 API（只加载元数据）
             try {
-                // 添加时间戳防止缓存
+                const response = await fetch('/api/databases?t=' + Date.now());
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.databases && Object.keys(data.databases).length > 0) {
+                        useTableStorage = true;
+                        databases = {};
+                        for (const [dbName, dbMeta] of Object.entries(data.databases)) {
+                            databases[dbName] = { tables: {} };
+                            for (const [tableName, tableMeta] of Object.entries(dbMeta.tables || {})) {
+                                databases[dbName].tables[tableName] = {
+                                    columns: tableMeta.columns || [],
+                                    foreignKeys: tableMeta.foreignKeys || [],
+                                    indexes: tableMeta.indexes || {},
+                                    data: []
+                                };
+                            }
+                        }
+                        tableVersions = data.tableVersions || {};
+                        localStorage.setItem('minisql_metadata', JSON.stringify({ databases, tableVersions }));
+                        console.log('✅ 元数据已加载（懒加载模式）:', Object.keys(databases).length, '个数据库');
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.log('分库分表API不可用，尝试旧版加载');
+            }
+
+            useTableStorage = false;
+
+            // 降级到旧版单文件加载
+            try {
                 const response = await fetch(DATA_FILE_PATH + '?t=' + Date.now());
                 if (response.ok) {
                     const data = await response.json();
                     if (data.databases && Object.keys(data.databases).length > 0) {
                         databases = data.databases;
-                        // 记录服务器版本号用于乐观锁
                         serverVersion = data.lastModified || new Date().toISOString();
-                        // 同步到localStorage，确保一致性
                         localStorage.setItem('minisql_data', JSON.stringify(databases));
-                        console.log('✅ 数据已从本地文件加载:', DATA_FILE_PATH, '版本:', serverVersion);
+                        console.log('✅ 数据已从旧版文件加载:', DATA_FILE_PATH, '版本:', serverVersion);
                         return;
                     }
                 }
             } catch (e) {
-                console.log('本地文件加载失败，尝试从localStorage加载');
+                console.log('旧版文件加载失败，尝试从localStorage加载');
             }
-            // 降级到localStorage
-            const saved = localStorage.getItem('minisql_data');
+
+            // 最后降级到localStorage
+            const saved = localStorage.getItem('minisql_data') || localStorage.getItem('minisql_metadata');
             if (saved) {
-                databases = JSON.parse(saved);
+                const parsed = JSON.parse(saved);
+                databases = parsed.databases || parsed;
+                tableVersions = parsed.tableVersions || {};
                 serverVersion = new Date().toISOString();
                 console.log('✅ 数据已从localStorage加载');
             }
@@ -138,6 +177,124 @@
             }
         }
 
+        // ==================== 懒加载：按需加载表数据 ====================
+        async function loadTableData(dbName, tableName) {
+            const tableKey = `${dbName}.${tableName}`;
+            
+            // 如果已加载，直接返回
+            if (tableData[tableKey]) {
+                return tableData[tableKey].data;
+            }
+            
+            try {
+                const response = await fetch(`/api/table-data/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}?t=${Date.now()}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    tableData[tableKey] = {
+                        data: result.data || [],
+                        version: result.version || new Date().toISOString()
+                    };
+                    tableVersions[tableKey] = result.version;
+                    if (databases[dbName] && databases[dbName].tables && databases[dbName].tables[tableName]) {
+                        databases[dbName].tables[tableName].data = tableData[tableKey].data;
+                    }
+                    console.log(`📥 表数据已加载: ${tableKey}, ${result.data.length} 行`);
+                    return tableData[tableKey].data;
+                }
+            } catch (e) {
+                console.error(`加载表数据失败: ${tableKey}`, e);
+            }
+            
+            // 失败时返回空数组
+            tableData[tableKey] = { data: [], version: new Date().toISOString() };
+            return [];
+        }
+        
+        // 获取表数据（自动按需加载）
+        async function getTableData(dbName, tableName) {
+            const tableKey = `${dbName}.${tableName}`;
+            if (!tableData[tableKey]) {
+                await loadTableData(dbName, tableName);
+            }
+            return tableData[tableKey].data;
+        }
+
+        // 保存表数据到服务器（表级版本号 + 表级锁）
+        async function saveTableData(dbName, tableName, showFeedback = true) {
+            const tableKey = `${dbName}.${tableName}`;
+            const data = tableData[tableKey]?.data || [];
+            const expectedVersion = tableVersions[tableKey];
+            
+            // 备份到localStorage
+            localStorage.setItem(`table_${tableKey}`, JSON.stringify({ data, version: expectedVersion }));
+            
+            try {
+                let newVersion = new Date().toISOString();
+                if (expectedVersion && newVersion === expectedVersion) {
+                    newVersion = new Date(Date.now() + 1).toISOString();
+                }
+                
+                const response = await fetch('/api/save-table', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        database: dbName,
+                        table: tableName,
+                        expectedVersion: expectedVersion,
+                        version: newVersion,
+                        data: data
+                    })
+                });
+                
+                if (response.ok) {
+                    tableVersions[tableKey] = newVersion;
+                    if (tableData[tableKey]) {
+                        tableData[tableKey].version = newVersion;
+                    }
+                    console.log(`✅ 表数据已保存: ${tableKey}, 版本: ${newVersion}`);
+                    return { ok: true, status: response.status };
+                } else if (response.status === 409) {
+                    const result = await response.json();
+                    const errorMessage = result.error || '数据冲突：其他进程已修改此表，请刷新页面';
+                    console.warn('⚠️ 保存冲突:', errorMessage);
+                    if (showFeedback) showResult(`错误: ${errorMessage}`, 'error');
+                    return { ok: false, status: response.status, errorMessage };
+                } else {
+                    const errorMessage = `保存失败 (HTTP ${response.status})`;
+                    console.warn('⚠️ 保存失败:', errorMessage);
+                    if (showFeedback) showResult(`错误: ${errorMessage}`, 'error');
+                    return { ok: false, status: response.status, errorMessage };
+                }
+            } catch (e) {
+                console.log('后端API不可用，数据已保存到localStorage');
+                if (showFeedback) showResult('错误: 后端API不可用，数据仅保存到localStorage', 'error');
+                return { ok: false, status: 0, errorMessage: '后端API不可用' };
+            }
+        }
+
+        // 保存元数据到服务器
+        async function saveMetadata(dbName) {
+            const metadata = databases[dbName];
+            if (!metadata) return { ok: false, errorMessage: '数据库不存在' };
+            
+            try {
+                const response = await fetch('/api/save-metadata', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ database: dbName, metadata })
+                });
+                
+                if (response.ok) {
+                    console.log(`✅ 元数据已保存: ${dbName}`);
+                    return { ok: true };
+                } else {
+                    return { ok: false, errorMessage: `保存失败 (HTTP ${response.status})` };
+                }
+            } catch (e) {
+                return { ok: false, errorMessage: '后端API不可用' };
+            }
+        }
+
         function updateStorageInfo() {
             const size = new Blob([JSON.stringify(databases)]).size;
             const fileStatus = fileHandle ? ` | 📁 ${fileHandle.name}` : '';
@@ -217,7 +374,7 @@
             }
             container.innerHTML = tables.map(name => `
                 <div class="table-item" onclick="quickSelectTable('${name}')" style="cursor:pointer">
-                    <span>📋 ${name} <small style="color:#666">(${databases[currentDatabase].tables[name].data.length})</small></span>
+                    <span>📋 ${name} <small style="color:#666">(${useTableStorage ? ((tableData[currentDatabase + '.' + name] && tableData[currentDatabase + '.' + name].data) ? tableData[currentDatabase + '.' + name].data.length : '…') : databases[currentDatabase].tables[name].data.length})</small></span>
                     <div class="item-actions">
                         <button onclick="event.stopPropagation();openEditTable('${name}')" title="编辑">✏</button>
                         <button onclick="event.stopPropagation();confirmDropTable('${name}')" title="删除">🗑</button>
@@ -903,10 +1060,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 document.getElementById('exec-time').textContent = `执行耗时: ${(endTime - startTime).toFixed(2)}ms`;
                 if (lastResult) displayResult(lastResult);
                 // 事务中不同步到服务器，等COMMIT/ROLLBACK时再同步
-                // 只有写操作且不在事务中才同步到服务器
-                const saveResult = await saveToStorage(hasWriteOperation && !inTransaction && !hasTransactionControl);
-                if (saveResult && !saveResult.ok) {
-                    showResult(`错误: ${saveResult.errorMessage}`, 'error');
+                // 只有写操作且不在事务中才同步到服务器（旧版单文件存储）
+                if (!useTableStorage) {
+                    const saveResult = await saveToStorage(hasWriteOperation && !inTransaction && !hasTransactionControl);
+                    if (saveResult && !saveResult.ok) {
+                        showResult(`错误: ${saveResult.errorMessage}`, 'error');
+                    }
                 }
                 renderDatabaseList();
                 renderTableList();
@@ -994,6 +1153,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (inTransaction) throw new Error('事务已经开始，请先COMMIT或ROLLBACK');
             inTransaction = true;
             transactionSnapshot = JSON.parse(JSON.stringify(databases)); // 深拷贝
+            if (useTableStorage) {
+                transactionSnapshotTableData = JSON.parse(JSON.stringify(tableData));
+                transactionSnapshotTableVersions = JSON.parse(JSON.stringify(tableVersions));
+            }
             updateTransactionStatus();
             return { type: 'message', message: '🔒 事务已开始 (BEGIN TRANSACTION) - 更改将暂存，需要COMMIT提交或ROLLBACK撤销', status: 'info' };
         }
@@ -1001,12 +1164,29 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         async function executeCommit() {
             if (!inTransaction) throw new Error('没有活动的事务');
             // COMMIT时同步数据到服务器
-            const saveResult = await saveToStorage(true, false);
-            if (!saveResult || !saveResult.ok) {
-                return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '提交失败'}`, status: 'error' };
+            if (useTableStorage) {
+                for (const tableKey of transactionModifiedTables) {
+                    const dot = tableKey.indexOf('.');
+                    const dbName = tableKey.substring(0, dot);
+                    const tableName = tableKey.substring(dot + 1);
+                    const result = await saveTableData(dbName, tableName, false);
+                    if (!result || !result.ok) {
+                        return { type: 'message', message: `错误: ${result && result.errorMessage ? result.errorMessage : '提交失败'}`, status: 'error' };
+                    }
+                }
+                transactionModifiedTables.clear();
+            } else {
+                const saveResult = await saveToStorage(true, false);
+                if (!saveResult || !saveResult.ok) {
+                    return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '提交失败'}`, status: 'error' };
+                }
             }
             inTransaction = false;
             transactionSnapshot = null;
+            if (useTableStorage) {
+                transactionSnapshotTableData = null;
+                transactionSnapshotTableVersions = null;
+            }
             updateTransactionStatus();
             return { type: 'message', message: '✅ 事务已提交 (COMMIT) - 所有更改已永久保存', status: 'success' };
         }
@@ -1014,13 +1194,24 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         async function executeRollback() {
             if (!inTransaction) throw new Error('没有活动的事务');
             databases = transactionSnapshot; // 恢复快照
+            if (useTableStorage) {
+                tableData = transactionSnapshotTableData || {};
+                tableVersions = transactionSnapshotTableVersions || {};
+                transactionModifiedTables.clear();
+            }
             inTransaction = false;
             transactionSnapshot = null;
+            if (useTableStorage) {
+                transactionSnapshotTableData = null;
+                transactionSnapshotTableVersions = null;
+            }
             updateTransactionStatus();
-            // ROLLBACK后同步恢复的数据到服务器
-            const saveResult = await saveToStorage(true, true);
-            if (!saveResult || !saveResult.ok) {
-                return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '回滚同步失败'}`, status: 'error' };
+            // ROLLBACK后同步恢复的数据到服务器（旧版单文件存储）
+            if (!useTableStorage) {
+                const saveResult = await saveToStorage(true, true);
+                if (!saveResult || !saveResult.ok) {
+                    return { type: 'message', message: `错误: ${saveResult && saveResult.errorMessage ? saveResult.errorMessage : '回滚同步失败'}`, status: 'error' };
+                }
             }
             return { type: 'message', message: '⏪ 事务已回滚 (ROLLBACK) - 所有更改已撤销，数据已恢复', status: 'warning' };
         }
@@ -1253,7 +1444,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             };
         }
 
-        function executeInsert(sql) {
+        async function executeInsert(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             const match = sql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
@@ -1262,6 +1453,9 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const tableName = match[1];
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
+
+            const tableKey = `${currentDatabase}.${tableName}`;
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
             
             const colNames = match[2].split(',').map(c => c.trim());
             const values = parseValues(match[3]);
@@ -1275,7 +1469,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // 处理自增主键
             for (const col of table.columns) {
                 if (col.autoIncrement) {
-                    const maxId = table.data.reduce((max, r) => Math.max(max, r[col.name] || 0), 0);
+                    const maxId = tableDataArray.reduce((max, r) => Math.max(max, r[col.name] || 0), 0);
                     row[col.name] = maxId + 1;
                 }
             }
@@ -1288,7 +1482,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // 检查主键唯一性
             for (const col of table.columns) {
                 if (col.primaryKey && row[col.name] !== undefined) {
-                    const exists = table.data.some(r => r[col.name] === row[col.name]);
+                    const exists = tableDataArray.some(r => r[col.name] === row[col.name]);
                     if (exists) throw new Error(`主键 '${col.name}' 值 '${row[col.name]}' 已存在`);
                 }
             }
@@ -1300,14 +1494,24 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     if (val !== null && val !== undefined) {
                         const refTable = databases[currentDatabase].tables[fk.refTable];
                         if (refTable) {
-                            const exists = refTable.data.some(r => r[fk.refColumn] == val);
+                            const refData = useTableStorage ? await getTableData(currentDatabase, fk.refTable) : refTable.data;
+                            const exists = refData.some(r => r[fk.refColumn] == val);
                             if (!exists) throw new Error(`外键约束失败: ${fk.column}=${val} 在 ${fk.refTable}.${fk.refColumn} 中不存在`);
                         }
                     }
                 }
             }
             
-            table.data.push(row);
+            tableDataArray.push(row);
+
+            if (useTableStorage) {
+                if (inTransaction) {
+                    transactionModifiedTables.add(tableKey);
+                } else {
+                    const saveResult = await saveTableData(currentDatabase, tableName, true);
+                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                }
+            }
             
             return { type: 'message', message: `成功插入 1 行数据`, status: 'success' };
         }
@@ -1352,12 +1556,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             return isNaN(num) ? val : num;
         }
 
-        function executeSelect(sql) {
+        async function executeSelect(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             // 检查是否包含JOIN
             if (sql.toUpperCase().includes(' JOIN ')) {
-                return executeJoinSelect(sql);
+                return await executeJoinSelect(sql);
             }
             
             // 检查DISTINCT
@@ -1380,8 +1584,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
-            
-            let data = [...table.data];
+
+            const tableKey = `${currentDatabase}.${tableName}`;
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
+            let data = [...tableDataArray];
             
             // WHERE 过滤
             if (whereClause) {
@@ -1424,7 +1630,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 }
                 return newRow;
             });
-            
+
             // DISTINCT 去重
             if (hasDistinct) {
                 const seen = new Set();
@@ -1554,7 +1760,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         // 多表JOIN查询
-        function executeJoinSelect(sql) {
+        async function executeJoinSelect(sql) {
             // 解析: SELECT cols FROM t1 [alias] JOIN t2 [alias] ON condition [WHERE ...] [ORDER BY ...] [LIMIT ...]
             const joinMatch = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+(\w+))?\s+JOIN\s+(\w+)(?:\s+(\w+))?\s+ON\s+(.+?)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?$/i);
             
@@ -1575,6 +1781,11 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const table2 = databases[currentDatabase].tables[table2Name];
             if (!table1) throw new Error(`表 '${table1Name}' 不存在`);
             if (!table2) throw new Error(`表 '${table2Name}' 不存在`);
+
+            const tableKey1 = `${currentDatabase}.${table1Name}`;
+            const tableKey2 = `${currentDatabase}.${table2Name}`;
+            const data1 = useTableStorage ? await getTableData(currentDatabase, table1Name) : table1.data;
+            const data2 = useTableStorage ? await getTableData(currentDatabase, table2Name) : table2.data;
             
             // 解析ON条件 (支持 t1.col = t2.col 格式)
             const onMatch = onCondition.match(/([\w.]+)\s*=\s*([\w.]+)/);
@@ -1585,8 +1796,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             // 执行内连接
             let joinedData = [];
-            for (const row1 of table1.data) {
-                for (const row2 of table2.data) {
+            for (const row1 of data1) {
+                for (const row2 of data2) {
                     if (row1[leftCol] == row2[rightCol]) {
                         const merged = {};
                         // 添加表1数据(带别名前缀避免冲突)
@@ -1752,7 +1963,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             return `${m[1].toUpperCase()}(${m[2]})`;
         }
 
-        function executeUpdate(sql) {
+        async function executeUpdate(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             const match = sql.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$/i);
@@ -1764,6 +1975,9 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
+
+            const tableKey = `${currentDatabase}.${tableName}`;
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
             
             // 解析 SET (保存表达式字符串，每行单独计算)
             const updateExprs = [];
@@ -1796,7 +2010,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             }
             
             let count = 0;
-            for (const row of table.data) {
+            for (const row of tableDataArray) {
                 if (!whereClause || evaluateWhere(row, whereClause)) {
                     for (const { col, expr } of updateExprs) {
                         row[col] = evalExpr(expr, row);
@@ -1804,11 +2018,20 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     count++;
                 }
             }
+
+            if (useTableStorage && count > 0) {
+                if (inTransaction) {
+                    transactionModifiedTables.add(tableKey);
+                } else {
+                    const saveResult = await saveTableData(currentDatabase, tableName, true);
+                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                }
+            }
             
             return { type: 'message', message: `成功更新 ${count} 行数据`, status: 'success' };
         }
 
-        function executeDelete(sql) {
+        async function executeDelete(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             const match = sql.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+))?$/i);
@@ -1819,9 +2042,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
+
+            const tableKey = `${currentDatabase}.${tableName}`;
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
             
             // 找出要删除的行
-            const toDelete = whereClause ? table.data.filter(row => evaluateWhere(row, whereClause)) : [...table.data];
+            const toDelete = whereClause ? tableDataArray.filter(row => evaluateWhere(row, whereClause)) : [...tableDataArray];
             
             // 检查外键约束：其他表是否引用要删除的数据
             const pkCol = table.columns.find(c => c.primaryKey);
@@ -1832,7 +2058,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     const fks = otherTable.foreignKeys || [];
                     for (const fk of fks) {
                         if (fk.refTable === tableName && fk.refColumn === pkCol.name) {
-                            for (const row of otherTable.data) {
+                            const otherData = useTableStorage ? await getTableData(currentDatabase, otherTableName) : otherTable.data;
+                            for (const row of otherData) {
                                 if (deletingPKs.has(row[fk.column])) {
                                     if (fk.onDelete === 'RESTRICT' || fk.onDelete === 'NO ACTION') {
                                         throw new Error(`外键约束失败: ${otherTableName}.${fk.column} 引用了要删除的 ${tableName}.${pkCol.name}=${row[fk.column]}`);
@@ -1843,15 +2070,26 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     }
                 }
             }
-            
-            const originalLength = table.data.length;
+
+            const originalLength = tableDataArray.length;
             if (whereClause) {
-                table.data = table.data.filter(row => !evaluateWhere(row, whereClause));
+                const remaining = tableDataArray.filter(row => !evaluateWhere(row, whereClause));
+                tableDataArray.length = 0;
+                tableDataArray.push(...remaining);
             } else {
-                table.data = [];
+                tableDataArray.length = 0;
             }
-            
-            const deletedCount = originalLength - table.data.length;
+
+            const deletedCount = originalLength - tableDataArray.length;
+
+            if (useTableStorage && deletedCount > 0) {
+                if (inTransaction) {
+                    transactionModifiedTables.add(tableKey);
+                } else {
+                    const saveResult = await saveTableData(currentDatabase, tableName, true);
+                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                }
+            }
             return { type: 'message', message: `成功删除 ${deletedCount} 行数据`, status: 'success' };
         }
 

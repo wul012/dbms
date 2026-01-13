@@ -1,0 +1,279 @@
+{
+  "metadata": {
+    "tables": {
+      "users": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "age",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "email",
+            "type": "VARCHAR",
+            "size": 100,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "status",
+            "type": "VARCHAR",
+            "size": 20,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "city",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "country",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "products": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 100,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "price",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "stock",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "category_id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "category",
+            "type": "VARCHAR",
+            "size": 20,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "orders": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "user_id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "product_id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "product",
+            "type": "VARCHAR",
+            "size": 100,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "amount",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "status",
+            "type": "VARCHAR",
+            "size": 20,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [
+          {
+            "name": "fk_orders_user_id",
+            "column": "user_id",
+            "refTable": "users",
+            "refColumn": "id",
+            "onDelete": "RESTRICT",
+            "onUpdate": "RESTRICT"
+          }
+        ],
+        "indexes": {}
+      },
+      "employees": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "department",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "salary",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "customers": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": true,
+            "default": null
+          },
+          {
+            "name": "city",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "country",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      }
+    }
+  }
+}
