@@ -517,19 +517,19 @@
                     <button class="btn btn-xs btn-danger" onclick="markFieldDeleted(this)">×</button>
                 </div>
             `).join('');
-            
+
             renderEditFKRows(tableName);
             showModal('edit-table-modal');
         }
-        
+
         function renderEditFKRows(tableName) {
             const table = databases[currentDatabase].tables[tableName];
             const foreignKeys = table.foreignKeys || [];
             const fkContainer = document.getElementById('edit-fk-rows');
             const otherTables = Object.keys(databases[currentDatabase].tables).filter(t => t !== tableName);
-            
+
             fkContainer.innerHTML = foreignKeys.map((fk, i) => `
-                <div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:1px solid #e9ecef;font-size:11px" data-fk-name="${fk.name || ''}">
+                <div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:1px solid #e9ecef;font-size:11px" data-fk-name="${fk.name || ('fk_' + tableName + '_' + fk.column)}">
                     <select class="fk-column" style="padding:5px;font-size:11px">
                         ${table.columns.map(c => `<option value="${c.name}" ${c.name===fk.column?'selected':''}>${c.name}</option>`).join('')}
                     </select>
@@ -559,6 +559,7 @@
         function updateRefColumns(select) {
             const row = select.parentElement;
             const refTable = databases[currentDatabase].tables[select.value];
+
             const refColSelect = row.querySelector('.fk-ref-column');
             refColSelect.innerHTML = refTable.columns.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
         }
@@ -657,35 +658,39 @@
             }
             
             const rows = document.querySelectorAll('#edit-field-rows .field-row');
-            const sqls = [];
+            const colSqls = [];
             rows.forEach(row => {
                 const fname = row.querySelector('.edit-fname').value.trim();
                 
                 if (row.dataset.deleted) {
-                    sqls.push(`ALTER TABLE ${editingTable} DROP COLUMN ${row.dataset.original}`);
+                    colSqls.push(`ALTER TABLE ${editingTable} DROP COLUMN ${row.dataset.original}`);
                 } else if (row.dataset.new && fname) {
                     const ftype = row.querySelector('.edit-ftype') ? row.querySelector('.edit-ftype').value : '';
                     const fsize = row.querySelector('.edit-fsize') ? row.querySelector('.edit-fsize').value : '';
-                    sqls.push(`ALTER TABLE ${editingTable} ADD ${fname} ${ftype}${fsize ? `(${fsize})` : ''}`);
+                    colSqls.push(`ALTER TABLE ${editingTable} ADD ${fname} ${ftype}${fsize ? `(${fsize})` : ''}`);
                 } else if (row.dataset.original && fname !== row.dataset.original) {
-                    sqls.push(`ALTER TABLE ${editingTable} RENAME COLUMN ${row.dataset.original} TO ${fname}`);
+                    colSqls.push(`ALTER TABLE ${editingTable} RENAME COLUMN ${row.dataset.original} TO ${fname}`);
                 }
             });
             
             // 处理外键更改
             const fkRows = document.querySelectorAll('#edit-fk-rows > div');
+            const fkDropSqls = [];
+            const fkAddSqls = [];
             fkRows.forEach(row => {
                 if (row.dataset.fkDeleted && row.dataset.fkName) {
-                    sqls.push(`ALTER TABLE ${editingTable} DROP FOREIGN KEY ${row.dataset.fkName}`);
+                    fkDropSqls.push(`ALTER TABLE ${editingTable} DROP FOREIGN KEY ${row.dataset.fkName}`);
                 } else if (row.dataset.fkNew) {
                     const col = row.querySelector('.fk-column').value;
                     const refTable = row.querySelector('.fk-ref-table').value;
                     const refCol = row.querySelector('.fk-ref-column').value;
                     const onDelete = row.querySelector('.fk-on-delete').value;
                     const onUpdate = row.querySelector('.fk-on-update').value;
-                    sqls.push(`ALTER TABLE ${editingTable} ADD FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE ${onDelete} ON UPDATE ${onUpdate}`);
+                    fkAddSqls.push(`ALTER TABLE ${editingTable} ADD FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE ${onDelete} ON UPDATE ${onUpdate}`);
                 }
             });
+
+            const sqls = [...fkDropSqls, ...colSqls, ...fkAddSqls];
             
             if (sqls.length > 0) {
                 document.getElementById('sql-editor').value = sqls.join(';\n') + ';';
@@ -1462,7 +1467,6 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     columns.push(col);
                 }
             }
-            
             return { columns, foreignKeys };
         }
 
@@ -1470,8 +1474,24 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (!currentDatabase) throw new Error('请先选择数据库');
             const match = sql.match(/DROP\s+TABLE\s+(\w+)/i);
             if (!match) throw new Error('DROP TABLE 语法错误');
+            
             const tableName = match[1];
             if (!databases[currentDatabase].tables[tableName]) throw new Error(`表 '${tableName}' 不存在`);
+
+            const referencing = [];
+            for (const [otherTableName, otherTable] of Object.entries(databases[currentDatabase].tables || {})) {
+                if (otherTableName === tableName) continue;
+                const fks = otherTable.foreignKeys || [];
+                for (const fk of fks) {
+                    if (!fk || !fk.refTable) continue;
+                    if (fk.refTable.toLowerCase() === tableName.toLowerCase()) {
+                        referencing.push(`${otherTableName}.${fk.column}`);
+                    }
+                }
+            }
+            if (referencing.length > 0) {
+                throw new Error(`无法删除表 '${tableName}'：被外键引用（请先删除相关外键）: ${referencing.join(', ')}`);
+            }
 
             delete databases[currentDatabase].tables[tableName];
 
@@ -2259,7 +2279,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 const table = databases[currentDatabase].tables[tableName];
                 if (!table) throw new Error(`表 '${tableName}' 不存在`);
                 if (!table.foreignKeys) table.foreignKeys = [];
-                const fkIdx = table.foreignKeys.findIndex(fk => fk.name && fk.name.toLowerCase() === fkName.toLowerCase());
+                const fkIdx = table.foreignKeys.findIndex(fk => {
+                    const resolvedName = (fk && (fk.name || (fk.column ? (`fk_${tableName}_${fk.column}`) : ''))) || '';
+                    return resolvedName.toLowerCase() === fkName.toLowerCase();
+                });
                 if (fkIdx === -1) throw new Error(`外键约束 '${fkName}' 不存在`);
                 table.foreignKeys.splice(fkIdx, 1);
                 return { type: 'message', message: `成功删除外键约束 '${fkName}'`, status: 'success' };
@@ -2284,6 +2307,28 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (!table) throw new Error(`表 '${tableName}' 不存在`);
                 const colIndex = table.columns.findIndex(c => c.name.toLowerCase() === colName.toLowerCase());
                 if (colIndex === -1) throw new Error(`列 '${colName}' 不存在`);
+
+                const ownedFk = (table.foreignKeys || []).find(fk => fk && fk.column && fk.column.toLowerCase() === colName.toLowerCase());
+                if (ownedFk) {
+                    const fkDisplayName = ownedFk.name || `fk_${tableName}_${ownedFk.column}`;
+                    throw new Error(`无法删除列 '${tableName}.${colName}'：该列存在外键约束 '${fkDisplayName}'（请先 DROP FOREIGN KEY）`);
+                }
+
+                const referencing = [];
+                for (const [otherTableName, otherTable] of Object.entries(databases[currentDatabase].tables || {})) {
+                    if (otherTableName === tableName) continue;
+                    const fks = otherTable.foreignKeys || [];
+                    for (const fk of fks) {
+                        if (!fk || !fk.refTable || !fk.refColumn) continue;
+                        if (fk.refTable.toLowerCase() === tableName.toLowerCase() && fk.refColumn.toLowerCase() === colName.toLowerCase()) {
+                            referencing.push(`${otherTableName}.${fk.column}`);
+                        }
+                    }
+                }
+                if (referencing.length > 0) {
+                    throw new Error(`无法删除列 '${tableName}.${colName}'：被外键引用（请先删除相关外键）: ${referencing.join(', ')}`);
+                }
+
                 table.columns.splice(colIndex, 1);
                 table.data.forEach(row => delete row[colName]);
                 return { type: 'message', message: `成功删除列 '${colName}'`, status: 'success' };
