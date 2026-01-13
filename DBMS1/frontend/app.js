@@ -177,6 +177,65 @@
             }
         }
 
+        async function ensureReadFreshTableLevel(statements) {
+            let dbName = currentDatabase;
+            const checked = new Set();
+
+            for (const stmt of statements) {
+                const s = (stmt || '').trim();
+                if (!s) continue;
+
+                const useMatch = s.match(/^USE\s+(\w+)/i);
+                if (useMatch) {
+                    dbName = useMatch[1];
+                    continue;
+                }
+
+                if (!dbName) continue;
+
+                const upper = s.toUpperCase();
+                const tables = new Set();
+
+                if (upper.startsWith('SELECT')) {
+                    const fromMatch = s.match(/\bFROM\s+(\w+)/i);
+                    if (fromMatch) tables.add(fromMatch[1]);
+
+                    const joinRe = /\bJOIN\s+(\w+)/ig;
+                    let m;
+                    while ((m = joinRe.exec(s)) !== null) {
+                        tables.add(m[1]);
+                    }
+                } else if (upper.startsWith('DESC') || upper.startsWith('DESCRIBE')) {
+                    const descMatch = s.match(/(?:DESC|DESCRIBE)\s+(\w+)/i);
+                    if (descMatch) tables.add(descMatch[1]);
+                } else {
+                    continue;
+                }
+
+                for (const tableName of tables) {
+                    const tableKey = `${dbName}.${tableName}`;
+                    if (checked.has(tableKey)) continue;
+                    checked.add(tableKey);
+
+                    const localVer = (tableVersions[tableKey] ?? null);
+                    let serverVer = null;
+
+                    try {
+                        const resp = await fetch(`/api/table-version/${encodeURIComponent(dbName)}/${encodeURIComponent(tableName)}?t=${Date.now()}`);
+                        if (!resp.ok) continue;
+                        const json = await resp.json();
+                        serverVer = (json && Object.prototype.hasOwnProperty.call(json, 'version')) ? (json.version ?? null) : null;
+                    } catch (e) {
+                        continue;
+                    }
+
+                    if (serverVer !== localVer) {
+                        throw new Error('数据已过期：检测到其他窗口已提交更新，请刷新页面后再查询');
+                    }
+                }
+            }
+        }
+
         // ==================== 懒加载：按需加载表数据 ====================
         async function loadTableData(dbName, tableName) {
             const tableKey = `${dbName}.${tableName}`;
@@ -194,7 +253,7 @@
                         data: result.data || [],
                         version: result.version || new Date().toISOString()
                     };
-                    tableVersions[tableKey] = result.version;
+                    tableVersions[tableKey] = tableData[tableKey].version;
                     if (databases[dbName] && databases[dbName].tables && databases[dbName].tables[tableName]) {
                         databases[dbName].tables[tableName].data = tableData[tableKey].data;
                     }
@@ -1008,6 +1067,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                    upperSQL.startsWith('SHOW') || 
                    upperSQL.startsWith('DESC') || 
                    upperSQL.startsWith('DESCRIBE') ||
+                   upperSQL.startsWith('USE') ||
                    upperSQL === 'BEGIN' ||
                    upperSQL === 'START TRANSACTION' ||
                    upperSQL === 'BEGIN TRANSACTION' ||
@@ -1036,7 +1096,11 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     if (!isReadOnlySQL(trimmedStmt)) hasWriteOperation = true;
                 }
                 if (hasReadQuery && !hasWriteOperation && !inTransaction) {
-                    await ensureReadFresh();
+                    if (useTableStorage) {
+                        await ensureReadFreshTableLevel(statements);
+                    } else {
+                        await ensureReadFresh();
+                    }
                 }
 
                 let lastResult = null;
