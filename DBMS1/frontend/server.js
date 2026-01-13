@@ -5,8 +5,6 @@ const path = require('path');
 const PORT = 8080;
 const DATA_DIR = path.join(__dirname, 'data');
 const LOCK_DIR = path.join(__dirname, 'data', 'locks');
-const DATA_FILE = path.join(__dirname, 'data', 'minisql_data.json');
-const LOCK_FILE = path.join(__dirname, 'data', '.minisql.lock');
 
 // 确保目录存在
 if (!fs.existsSync(DATA_DIR)) {
@@ -48,36 +46,39 @@ function releaseTableLock(dbName, tableName) {
     try { fs.unlinkSync(lockFile); } catch {}
 }
 
-// 文件锁机制 - 防止多进程并发写入冲突（兼容旧版）
-function acquireLock(timeout = 3000) {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-        try {
-            fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
-            return true;
-        } catch (e) {
-            if (e.code === 'EEXIST') {
-                // 检查锁是否过期（超过5秒视为过期）
-                try {
-                    const stat = fs.statSync(LOCK_FILE);
-                    if (Date.now() - stat.mtimeMs > 5000) {
-                        fs.unlinkSync(LOCK_FILE);
-                        continue;
-                    }
-                } catch {}
-                // 等待10ms后重试
-                const waitUntil = Date.now() + 10;
-                while (Date.now() < waitUntil) {}
-            } else {
-                return false;
-            }
-        }
-    }
-    return false;
+function readJson(filePath) {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function releaseLock() {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+function readJsonIfExists(filePath, defaultValue) {
+    if (!fs.existsSync(filePath)) return defaultValue;
+    return readJson(filePath);
+}
+
+function getMetadataFile(dbName) {
+    return path.join(DATA_DIR, `${dbName}_metadata.json`);
+}
+
+function getTableFile(dbName, tableName) {
+    return path.join(DATA_DIR, `${dbName}_${tableName}.json`);
+}
+
+function listDatabasesFromMetadataFiles() {
+    const dbNames = [];
+    const files = fs.readdirSync(DATA_DIR);
+    for (const file of files) {
+        if (file.endsWith('_metadata.json')) {
+            dbNames.push(file.replace('_metadata.json', ''));
+        }
+    }
+    return dbNames;
+}
+
+function makeUniqueName(base, existsFn) {
+    if (!existsFn(base)) return base;
+    let i = 1;
+    while (existsFn(`${base}_import${i}`)) i++;
+    return `${base}_import${i}`;
 }
 
 const MIME_TYPES = {
@@ -99,23 +100,6 @@ const server = http.createServer((req, res) => {
     if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
-        return;
-    }
-
-    // API: 获取服务器版本号（lastModified）用于读时过期检测（兼容旧版）
-    if (req.method === 'GET' && req.url.split('?')[0] === '/api/version') {
-        try {
-            let lastModified = null;
-            if (fs.existsSync(DATA_FILE)) {
-                const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-                lastModified = existing.lastModified || null;
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, lastModified }));
-        } catch (e) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: e.message }));
-        }
         return;
     }
 
@@ -287,55 +271,283 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // API: 保存数据到本地文件（带文件锁）（兼容旧版）
-    if (req.method === 'POST' && req.url === '/api/save') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                
-                // 获取文件锁
-                if (!acquireLock()) {
-                    res.writeHead(409, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, error: '文件被其他进程锁定，请稍后重试' }));
-                    console.log('⚠️ 写入冲突：文件被锁定');
-                    return;
-                }
-                
-                try {
-                    // 乐观锁版本检查：比较客户端的expectedVersion和服务器当前版本
-                    if (!data.forceWrite && fs.existsSync(DATA_FILE) && data.expectedVersion) {
-                        const existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-                        if (existing.lastModified && existing.lastModified !== data.expectedVersion) {
-                            releaseLock();
-                            res.writeHead(409, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ 
-                                success: false, 
-                                error: '数据冲突：其他进程已修改数据，请刷新页面',
-                                serverVersion: existing.lastModified,
-                                clientVersion: data.expectedVersion
-                            }));
-                            console.log('⚠️ 乐观锁冲突: 客户端版本', data.expectedVersion, '服务器版本', existing.lastModified);
-                            return;
-                        }
-                    }
-                    
-                    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true, message: '数据已保存到本地文件', path: DATA_FILE }));
-                    console.log('✅ 数据已保存:', DATA_FILE, '版本:', data.lastModified);
-                } finally {
-                    releaseLock();
-                }
-            } catch (e) {
-                releaseLock();
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, error: e.message }));
-            }
-        });
-        return;
-    }
+     if (req.method === 'POST' && req.url.split('?')[0] === '/api/clear-all') {
+         try {
+             const files = fs.readdirSync(DATA_DIR);
+             for (const file of files) {
+                 const fullPath = path.join(DATA_DIR, file);
+                 let stat;
+                 try { stat = fs.statSync(fullPath); } catch { continue; }
+                 if (!stat.isFile()) continue;
+                 if (file.toLowerCase().endsWith('.json')) {
+                     try { fs.unlinkSync(fullPath); } catch {}
+                 }
+             }
+
+             const lockFiles = fs.readdirSync(LOCK_DIR);
+             for (const file of lockFiles) {
+                 const fullPath = path.join(LOCK_DIR, file);
+                 let stat;
+                 try { stat = fs.statSync(fullPath); } catch { continue; }
+                 if (!stat.isFile()) continue;
+                 try { fs.unlinkSync(fullPath); } catch {}
+             }
+
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: true }));
+         } catch (e) {
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: e.message }));
+         }
+         return;
+     }
+
+     if (req.method === 'POST' && req.url.split('?')[0] === '/api/delete-database') {
+         try {
+             const u = new URL(req.url, `http://localhost:${PORT}`);
+             const database = u.searchParams.get('database');
+             if (!database) {
+                 res.writeHead(400, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: false, error: '缺少 database 参数' }));
+                 return;
+             }
+
+             const metaFile = getMetadataFile(database);
+             try { fs.unlinkSync(metaFile); } catch {}
+
+             const files = fs.readdirSync(DATA_DIR);
+             for (const file of files) {
+                 if (file.startsWith(`${database}_`) && file.toLowerCase().endsWith('.json') && !file.endsWith('_metadata.json')) {
+                     try { fs.unlinkSync(path.join(DATA_DIR, file)); } catch {}
+                 }
+             }
+
+             const lockFiles = fs.readdirSync(LOCK_DIR);
+             for (const file of lockFiles) {
+                 if (file.startsWith(`${database}_`) && file.toLowerCase().endsWith('.lock')) {
+                     try { fs.unlinkSync(path.join(LOCK_DIR, file)); } catch {}
+                 }
+             }
+
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: true }));
+         } catch (e) {
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: e.message }));
+         }
+         return;
+     }
+
+     if (req.method === 'POST' && req.url.split('?')[0] === '/api/delete-table') {
+         try {
+             const u = new URL(req.url, `http://localhost:${PORT}`);
+             const database = u.searchParams.get('database');
+             const table = u.searchParams.get('table');
+             if (!database || !table) {
+                 res.writeHead(400, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: false, error: '缺少 database 或 table 参数' }));
+                 return;
+             }
+             try { fs.unlinkSync(getTableFile(database, table)); } catch {}
+             try { fs.unlinkSync(path.join(LOCK_DIR, `${database}_${table}.lock`)); } catch {}
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: true }));
+         } catch (e) {
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: e.message }));
+         }
+         return;
+     }
+
+     if (req.method === 'POST' && req.url.split('?')[0] === '/api/rename-table-file') {
+         try {
+             const u = new URL(req.url, `http://localhost:${PORT}`);
+             const database = u.searchParams.get('database');
+             const from = u.searchParams.get('from');
+             const to = u.searchParams.get('to');
+             if (!database || !from || !to) {
+                 res.writeHead(400, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: false, error: '缺少 database/from/to 参数' }));
+                 return;
+             }
+             const fromFile = getTableFile(database, from);
+             const toFile = getTableFile(database, to);
+             if (!fs.existsSync(fromFile)) {
+                 res.writeHead(200, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: true, skipped: true }));
+                 return;
+             }
+             if (fs.existsSync(toFile)) {
+                 res.writeHead(409, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: false, error: `目标表已存在: ${database}.${to}` }));
+                 return;
+             }
+             fs.renameSync(fromFile, toFile);
+
+             const fromLock = path.join(LOCK_DIR, `${database}_${from}.lock`);
+             const toLock = path.join(LOCK_DIR, `${database}_${to}.lock`);
+             if (fs.existsSync(fromLock) && !fs.existsSync(toLock)) {
+                 try { fs.renameSync(fromLock, toLock); } catch {}
+             }
+
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: true }));
+         } catch (e) {
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: e.message }));
+         }
+         return;
+     }
+
+     if (req.method === 'GET' && req.url.split('?')[0] === '/api/backup') {
+         try {
+             const u = new URL(req.url, `http://localhost:${PORT}`);
+             const scope = (u.searchParams.get('scope') || 'all').toLowerCase();
+             const database = u.searchParams.get('database');
+
+             const snapshot = {
+                 version: '2.0',
+                 exportTime: new Date().toISOString(),
+                 scope: scope === 'db' ? { type: 'db', database } : { type: 'all' },
+                 databases: {},
+                 tableData: {},
+                 tableVersions: {}
+             };
+
+             let dbNames = [];
+             if (scope === 'db') {
+                 if (!database) {
+                     res.writeHead(400, { 'Content-Type': 'application/json' });
+                     res.end(JSON.stringify({ success: false, error: '缺少 database 参数' }));
+                     return;
+                 }
+                 if (!fs.existsSync(getMetadataFile(database))) {
+                     res.writeHead(404, { 'Content-Type': 'application/json' });
+                     res.end(JSON.stringify({ success: false, error: `数据库不存在: ${database}` }));
+                     return;
+                 }
+                 dbNames = [database];
+             } else {
+                 dbNames = listDatabasesFromMetadataFiles();
+             }
+
+             for (const dbName of dbNames) {
+                 const metaJson = readJson(getMetadataFile(dbName));
+                 const metadata = metaJson.metadata || { tables: {} };
+                 snapshot.databases[dbName] = metadata;
+
+                 for (const tableName of Object.keys(metadata.tables || {})) {
+                     const tableKey = `${dbName}.${tableName}`;
+                     const tableJson = readJsonIfExists(getTableFile(dbName, tableName), { version: null, data: [] });
+                     snapshot.tableData[tableKey] = {
+                         version: Object.prototype.hasOwnProperty.call(tableJson, 'version') ? (tableJson.version ?? null) : null,
+                         data: Array.isArray(tableJson.data) ? tableJson.data : []
+                     };
+                     snapshot.tableVersions[tableKey] = snapshot.tableData[tableKey].version;
+                 }
+             }
+
+             res.writeHead(200, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify(snapshot, null, 2));
+         } catch (e) {
+             res.writeHead(500, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: e.message }));
+         }
+         return;
+     }
+
+     if (req.method === 'POST' && req.url.split('?')[0] === '/api/restore') {
+         const u = new URL(req.url, `http://localhost:${PORT}`);
+         const mode = (u.searchParams.get('mode') || 'merge').toLowerCase();
+         const conflict = (u.searchParams.get('conflict') || 'rename').toLowerCase();
+         if (mode !== 'merge' || conflict !== 'rename') {
+             res.writeHead(400, { 'Content-Type': 'application/json' });
+             res.end(JSON.stringify({ success: false, error: '仅支持 mode=merge&conflict=rename' }));
+             return;
+         }
+
+         let body = '';
+         req.on('data', chunk => body += chunk);
+         req.on('end', () => {
+             try {
+                 const snapshot = JSON.parse(body || '{}');
+                 const incomingDbs = snapshot.databases || {};
+                 const incomingTableData = snapshot.tableData || {};
+
+                 const existingDbs = new Set(listDatabasesFromMetadataFiles());
+                 const renamedDatabases = {};
+                 const renamedTables = {};
+
+                 for (const [srcDbName, srcDbMeta] of Object.entries(incomingDbs)) {
+                     const targetDbName = makeUniqueName(srcDbName, (n) => existingDbs.has(n));
+                     if (targetDbName !== srcDbName) renamedDatabases[srcDbName] = targetDbName;
+                     existingDbs.add(targetDbName);
+
+                     const existingMeta = readJsonIfExists(getMetadataFile(targetDbName), { metadata: { tables: {} } }).metadata || { tables: {} };
+                     const existingTables = new Set(Object.keys(existingMeta.tables || {}));
+
+                     const srcTables = (srcDbMeta && srcDbMeta.tables) ? srcDbMeta.tables : {};
+                     const tableRenameMap = {};
+                     const outTables = {};
+
+                     for (const [srcTableName, tableMeta] of Object.entries(srcTables)) {
+                         const targetTableName = makeUniqueName(srcTableName, (n) => existingTables.has(n));
+                         if (targetTableName !== srcTableName) {
+                             if (!renamedTables[targetDbName]) renamedTables[targetDbName] = {};
+                             renamedTables[targetDbName][srcTableName] = targetTableName;
+                             tableRenameMap[srcTableName] = targetTableName;
+                         }
+                         existingTables.add(targetTableName);
+                         outTables[targetTableName] = JSON.parse(JSON.stringify(tableMeta || {}));
+                     }
+
+                     for (const [tName, tMeta] of Object.entries(outTables)) {
+                         const fks = Array.isArray(tMeta.foreignKeys) ? tMeta.foreignKeys : [];
+                         for (const fk of fks) {
+                             if (fk && fk.refTable && tableRenameMap[fk.refTable]) {
+                                 fk.refTable = tableRenameMap[fk.refTable];
+                             }
+                         }
+                     }
+
+                     const outMeta = { tables: { ...(existingMeta.tables || {}) } };
+                     for (const [tName, tMeta] of Object.entries(outTables)) {
+                         outMeta.tables[tName] = tMeta;
+                     }
+                     fs.writeFileSync(getMetadataFile(targetDbName), JSON.stringify({ metadata: outMeta }, null, 2), 'utf8');
+
+                     for (const [srcTableName, tableMeta] of Object.entries(srcTables)) {
+                         const targetTableName = tableRenameMap[srcTableName] || srcTableName;
+                         const srcKey = `${srcDbName}.${srcTableName}`;
+                         const payload = incomingTableData[srcKey] || { version: null, data: [] };
+                         const outPayload = {
+                             version: (payload && Object.prototype.hasOwnProperty.call(payload, 'version')) ? (payload.version ?? null) : null,
+                             data: (payload && Array.isArray(payload.data)) ? payload.data : []
+                         };
+                         const version = outPayload.version || new Date().toISOString();
+
+                         if (!acquireTableLock(targetDbName, targetTableName)) {
+                             res.writeHead(409, { 'Content-Type': 'application/json' });
+                             res.end(JSON.stringify({ success: false, error: `表 ${targetDbName}.${targetTableName} 被其他进程锁定，请稍后重试` }));
+                             return;
+                         }
+                         try {
+                             fs.writeFileSync(getTableFile(targetDbName, targetTableName), JSON.stringify({ version, data: outPayload.data }, null, 2), 'utf8');
+                         } finally {
+                             releaseTableLock(targetDbName, targetTableName);
+                         }
+                     }
+                 }
+
+                 res.writeHead(200, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: true, renamedDatabases, renamedTables }));
+             } catch (e) {
+                 res.writeHead(500, { 'Content-Type': 'application/json' });
+                 res.end(JSON.stringify({ success: false, error: e.message }));
+             }
+         });
+         return;
+     }
 
     // 静态文件服务（移除查询参数）
     let urlPath = req.url.split('?')[0];
