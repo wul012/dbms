@@ -1,0 +1,32 @@
+{
+  "version": "2026-01-13T07:13:26.069Z",
+  "data": [
+    {
+      "id": 1,
+      "name": "张三",
+      "age": 25,
+      "email": "zhangsan@example.com",
+      "status": "active",
+      "city": "Beijing",
+      "country": "China"
+    },
+    {
+      "id": 2,
+      "name": "李四",
+      "age": 21,
+      "email": null,
+      "status": "pending",
+      "city": "Shanghai",
+      "country": "China"
+    },
+    {
+      "id": 3,
+      "name": "王明",
+      "age": 32,
+      "email": "wangming@example.com",
+      "status": "inactive",
+      "city": "Shenzhen",
+      "country": "China"
+    }
+  ]
+}

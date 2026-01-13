@@ -23,7 +23,7 @@ MiniSQL 是一个完整的数据库管理系统，支持：
 ### 启动Web服务器
 
 ```bash
-cd frontend
+cd minisql_web
 node server.js
 ```
 
