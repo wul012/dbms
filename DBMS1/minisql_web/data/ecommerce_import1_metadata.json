@@ -124,16 +124,7 @@
             "default": null
           }
         ],
-        "foreignKeys": [
-          {
-            "name": "fk_products_category_id",
-            "column": "category_id",
-            "refTable": "categories",
-            "refColumn": "id",
-            "onDelete": "RESTRICT",
-            "onUpdate": "RESTRICT"
-          }
-        ],
+        "foreignKeys": [],
         "indexes": {}
       },
       "orders": {
@@ -184,16 +175,7 @@
             "default": null
           }
         ],
-        "foreignKeys": [
-          {
-            "name": "fk_orders_user_id",
-            "column": "user_id",
-            "refTable": "users",
-            "refColumn": "id",
-            "onDelete": "RESTRICT",
-            "onUpdate": "RESTRICT"
-          }
-        ],
+        "foreignKeys": [],
         "indexes": {}
       },
       "order_items": {

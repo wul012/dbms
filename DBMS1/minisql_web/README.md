@@ -46,7 +46,10 @@ node cli.js -d testdb -e "SELECT * FROM users"
 ### 数据存储
 
 ```
-frontend/data/minisql_data.json
+minisql_web/data/
+├── <db>_metadata.json
+├── <db>_<table>.json
+└── locks/
 ```
 
 ### 示例数据库（README 可直接运行）
@@ -340,27 +343,43 @@ CREATE TABLE users (
 ## 📂 文件结构
 
 ```
-frontend/
-├── index.html          # 主页面 (HTML + CSS + JS)
+minisql_web/
+├── index.html          # 主页面
+├── styles.css          # 样式文件
+├── app.js              # 前端逻辑
 ├── server.js           # Node.js 后端服务器
+├── cli.js              # 命令行工具
 ├── data/
-│   └── minisql_data.json   # 数据存储文件
+│   ├── <db>_metadata.json   # 数据库元数据（表结构/外键/索引）
+│   ├── <db>_<table>.json    # 表数据与版本号
+│   └── locks/               # 表级锁文件
 └── README.md           # 说明文档
 ```
 
-## 💾 数据存储
+## 💾 数据存储（分库分表）
 
 ### 存储机制
 
-1. **主存储**: 通过后端API保存到 `data/minisql_data.json`
-2. **备份**: 同时保存到浏览器 localStorage
+1. **元数据**: `data/<db>_metadata.json`（表结构、外键、索引等）
+2. **表数据**: `data/<db>_<table>.json`（`data` + `version`）
+3. **并发控制**: `data/locks/<db>_<table>.lock`（表级锁）
 
-### 数据文件格式
+### 备份/恢复（快照）
+
+- **导出（全量）**: `GET /api/backup?scope=all`
+- **导出（单库）**: `GET /api/backup?scope=db&database=<db>`
+- **导入（合并 + 重名自动改名）**: `POST /api/restore?mode=merge&conflict=rename`
+  - 重名库/表会自动改名为 `<name>_importN`
+  - 会同步更新外键引用到新的表名
+- **清空所有数据**: `POST /api/clear-all`
+
+### 快照文件格式（v2.0）
 
 ```json
 {
-  "version": "1.0",
-  "lastModified": "2026-01-12T04:00:00.000Z",
+  "version": "2.0",
+  "exportTime": "2026-01-13T00:00:00.000Z",
+  "scope": { "type": "all" },
   "databases": {
     "mydb": {
       "tables": {
@@ -368,14 +387,16 @@ frontend/
           "columns": [
             {"name": "id", "type": "INT", "primaryKey": true},
             {"name": "name", "type": "VARCHAR", "size": 50}
-          ],
-          "data": [
-            {"id": 1, "name": "张三"},
-            {"id": 2, "name": "李四"}
           ]
         }
       }
     }
+  },
+  "tableData": {
+    "mydb.users": { "version": "2026-01-13T00:00:00.000Z", "data": [] }
+  },
+  "tableVersions": {
+    "mydb.users": "2026-01-13T00:00:00.000Z"
   }
 }
 ```
@@ -385,6 +406,7 @@ frontend/
 - **导出JSON**: 点击工具栏"📤 导出"按钮，下载JSON备份文件
 - **导入JSON**: 点击工具栏"📥 导入"按钮，选择JSON文件导入
 - **导出CSV**: 执行查询后，点击结果区"📥 导出CSV"按钮下载查询结果
+- **行删除（可视化）**: 单表 `SELECT` 且结果包含主键列时，结果表格最后一列会显示“🗑”按钮，点击可删除该行
 
 ## 📊 ER图可视化
 
@@ -465,7 +487,7 @@ DELETE FROM students WHERE id = 3;
 ROLLBACK;  -- 撤销删除
 ```
 
-## � 并发控制
+## 🔐 并发控制
 
 ### 乐观锁机制
 
@@ -477,39 +499,47 @@ ROLLBACK;  -- 撤销删除
 
 ### 文件锁
 
-服务器端使用文件锁（`.minisql.lock`）防止同时写入，锁超时5秒自动释放。
+服务器端使用表级锁文件 `data/locks/<db>_<table>.lock` 防止同时写入，锁超时5秒自动释放。
 
 ---
 
-## �🛠️ 技术栈
+## 🛠️ 技术栈
 
 | 组件 | 技术 |
 |------|------|
 | 前端 | HTML5, CSS3, JavaScript (原生) |
 | 后端 | Node.js (原生HTTP模块) |
-| 存储 | JSON文件 + localStorage |
+| 存储 | JSON 文件（分库分表） + localStorage |
 | 并发控制 | 乐观锁 + 文件锁 |
 
 ## 📂 文件结构
 
 ```
-frontend/
-├── index.html      # 主页面
-├── styles.css      # 样式文件
-├── app.js          # 前端逻辑
-├── server.js       # Node.js 服务器
-├── cli.js          # 命令行工具
+minisql_web/
+├── index.html
+├── styles.css
+├── app.js
+├── server.js
+├── cli.js
 ├── data/
-│   └── minisql_data.json   # 数据存储
-└── README.md       # 说明文档
+│   ├── <db>_metadata.json
+│   ├── <db>_<table>.json
+│   └── locks/
+└── README.md
 ```
 
 ## 📄 版本信息
 
-- **版本**: 1.5
-- **更新日期**: 2026-01-12
+- **版本**: 2.0
+- **更新日期**: 2026-01-13
 
 ### 更新日志
+
+**v2.0** (2026-01-13)
+- 分库分表存储：元数据与表数据拆分为多个 JSON 文件
+- 新增备份/恢复接口：`/api/backup`、`/api/restore`，导入重名自动改名并更新外键引用
+- 新增查询结果行删除按钮（仅单表 SELECT 且包含主键列时启用）
+- 外键删除严格约束：禁止删除被引用的表/列；可视化编辑器生成 SQL 顺序优化（先 DROP FK 再 DROP COLUMN）
 
 **v1.5** (2026-01-12)
 - 新增命令行工具 cli.js（交互模式 + 批量执行）

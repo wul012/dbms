@@ -12,6 +12,7 @@
         let transactionSnapshotTableData = null;
         let transactionSnapshotTableVersions = null;
         let transactionModifiedTables = new Set(); // 事务期间修改的表
+        let transactionModifiedDatabases = new Set();
         
         // ==================== 执行历史 ====================
         let sqlHistory = JSON.parse(localStorage.getItem('sql_history') || '[]');
@@ -319,29 +320,6 @@
                 }
                 dbCountEl.textContent = dbCount;
                 tableCountEl.textContent = tableCount;
-            }
-        }
-
-        // 绑定本地文件（用户选择文件后可自动保存）
-        async function bindLocalFile() {
-            try {
-                if (!('showSaveFilePicker' in window)) {
-                    alert('您的浏览器不支持File System Access API，请使用Chrome 86+');
-                    return;
-                }
-                fileHandle = await window.showSaveFilePicker({
-                    suggestedName: 'minisql_backup.json',
-                    types: [{
-                        description: 'JSON Database File',
-                        accept: { 'application/json': ['.json'] }
-                    }]
-                });
-                await writeBoundFileSnapshot({ scope: 'all' });
-                showResult(`已绑定本地文件: ${fileHandle.name}，后续修改将自动保存`, 'success');
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    showResult('绑定文件失败: ' + e.message, 'error');
-                }
             }
         }
 
@@ -1194,6 +1172,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 transactionSnapshotTableData = JSON.parse(JSON.stringify(tableData));
                 transactionSnapshotTableVersions = JSON.parse(JSON.stringify(tableVersions));
             }
+            transactionModifiedTables.clear();
+            transactionModifiedDatabases.clear();
             updateTransactionStatus();
             return { type: 'message', message: '🔒 事务已开始 (BEGIN TRANSACTION) - 更改将暂存，需要COMMIT提交或ROLLBACK撤销', status: 'info' };
         }
@@ -1212,6 +1192,14 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     }
                 }
                 transactionModifiedTables.clear();
+
+                for (const dbName of transactionModifiedDatabases) {
+                    const result = await saveMetadata(dbName);
+                    if (!result || !result.ok) {
+                        return { type: 'message', message: `错误: ${result && result.errorMessage ? result.errorMessage : '提交失败'}`, status: 'error' };
+                    }
+                }
+                transactionModifiedDatabases.clear();
             } else {
                 const saveResult = await saveToStorage(true, false);
                 if (!saveResult || !saveResult.ok) {
@@ -1235,6 +1223,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 tableData = transactionSnapshotTableData || {};
                 tableVersions = transactionSnapshotTableVersions || {};
                 transactionModifiedTables.clear();
+                transactionModifiedDatabases.clear();
             }
             inTransaction = false;
             transactionSnapshot = null;
@@ -1472,6 +1461,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
         async function executeDropTable(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
+            
             const match = sql.match(/DROP\s+TABLE\s+(\w+)/i);
             if (!match) throw new Error('DROP TABLE 语法错误');
             
@@ -1782,7 +1772,18 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 });
             }
             
-            return { type: 'table', columns, data: projectedData, message: `查询到 ${projectedData.length} 行数据${hasDistinct ? ' (已去重)' : ''}` };
+            const pkCol = table.columns.find(c => c.primaryKey);
+            return {
+                type: 'table',
+                columns,
+                data: projectedData,
+                message: `查询到 ${projectedData.length} 行数据${hasDistinct ? ' (已去重)' : ''}`,
+                meta: {
+                    kind: 'select',
+                    tableName,
+                    pkColumn: pkCol ? pkCol.name : null
+                }
+            };
         }
 
         // 聚合查询处理
@@ -1902,7 +1903,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         // 多表JOIN查询
         async function executeJoinSelect(sql) {
             // 解析: SELECT cols FROM t1 [alias] JOIN t2 [alias] ON condition [WHERE ...] [ORDER BY ...] [LIMIT ...]
-            const joinMatch = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+(\w+))?\s+JOIN\s+(\w+)(?:\s+(\w+))?\s+ON\s+(.+?)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+([\w.]+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?$/i);
+            const joinMatch = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+(\w+))?\s+JOIN\s+(\w+)(?:\s+(\w+))?\s+ON\s+(.+?)(?:\s+WHERE\s+(.+))?$/i);
             
             if (!joinMatch) throw new Error('JOIN 语法错误，格式: SELECT cols FROM t1 JOIN t2 ON t1.col = t2.col');
             
@@ -1913,9 +1914,6 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const alias2 = joinMatch[5] || table2Name;
             const onCondition = joinMatch[6];
             const whereClause = joinMatch[7];
-            const orderBy = joinMatch[8];
-            const orderDir = joinMatch[9] || 'ASC';
-            const limit = joinMatch[10] ? parseInt(joinMatch[10]) : null;
             
             const table1 = databases[currentDatabase].tables[table1Name];
             const table2 = databases[currentDatabase].tables[table2Name];
@@ -1959,20 +1957,6 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (whereClause) {
                 joinedData = joinedData.filter(row => evaluateWhere(row, whereClause));
             }
-            
-            // ORDER BY 排序
-            if (orderBy) {
-                const col = orderBy.includes('.') ? orderBy : orderBy;
-                joinedData.sort((a, b) => {
-                    const va = a[col] ?? a[orderBy], vb = b[col] ?? b[orderBy];
-                    if (va < vb) return orderDir === 'ASC' ? -1 : 1;
-                    if (va > vb) return orderDir === 'ASC' ? 1 : -1;
-                    return 0;
-                });
-            }
-            
-            // LIMIT
-            if (limit) joinedData = joinedData.slice(0, limit);
             
             // 解析选择的列
             let columns = [];
@@ -2189,23 +2173,84 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // 找出要删除的行
             const toDelete = whereClause ? tableDataArray.filter(row => evaluateWhere(row, whereClause)) : [...tableDataArray];
             
-            // 检查外键约束：其他表是否引用要删除的数据
+            const modifiedTables = new Set();
             const pkCol = table.columns.find(c => c.primaryKey);
             if (pkCol && toDelete.length > 0) {
-                const deletingPKs = new Set(toDelete.map(r => r[pkCol.name]));
-                for (const [otherTableName, otherTable] of Object.entries(databases[currentDatabase].tables)) {
-                    if (otherTableName === tableName) continue;
-                    const fks = otherTable.foreignKeys || [];
-                    for (const fk of fks) {
-                        if (fk.refTable === tableName && fk.refColumn === pkCol.name) {
+                const rootKeys = new Set(toDelete.map(r => r[pkCol.name]).filter(v => v !== null && v !== undefined).map(v => String(v)));
+
+                const queue = [];
+                if (rootKeys.size > 0) {
+                    queue.push({ refTableName: tableName, refColumn: pkCol.name, deletingKeys: rootKeys });
+                }
+
+                const resolveOnDelete = (fk) => {
+                    const v = fk && fk.onDelete ? String(fk.onDelete).toUpperCase() : 'RESTRICT';
+                    return v;
+                };
+
+                while (queue.length > 0) {
+                    const { refTableName, refColumn, deletingKeys } = queue.shift();
+                    const refTableLower = String(refTableName).toLowerCase();
+                    const refColumnLower = String(refColumn).toLowerCase();
+
+                    for (const [otherTableName, otherTable] of Object.entries(databases[currentDatabase].tables)) {
+                        if (otherTableName === refTableName) continue;
+                        const fks = otherTable.foreignKeys || [];
+                        for (const fk of fks) {
+                            if (!fk || !fk.refTable || !fk.refColumn || !fk.column) continue;
+                            if (String(fk.refTable).toLowerCase() !== refTableLower || String(fk.refColumn).toLowerCase() !== refColumnLower) continue;
+
                             const otherData = useTableStorage ? await getTableData(currentDatabase, otherTableName) : otherTable.data;
-                            for (const row of otherData) {
-                                if (deletingPKs.has(row[fk.column])) {
-                                    if (fk.onDelete === 'RESTRICT' || fk.onDelete === 'NO ACTION') {
-                                        throw new Error(`外键约束失败: ${otherTableName}.${fk.column} 引用了要删除的 ${tableName}.${pkCol.name}=${row[fk.column]}`);
+                            const affected = otherData.filter(r => {
+                                const v = r ? r[fk.column] : undefined;
+                                if (v === null || v === undefined) return false;
+                                return deletingKeys.has(String(v));
+                            });
+                            if (affected.length === 0) continue;
+
+                            const onDelete = resolveOnDelete(fk);
+                            if (onDelete === 'RESTRICT' || onDelete === 'NO ACTION') {
+                                throw new Error(`外键约束失败: ${otherTableName}.${fk.column} 引用了要删除的 ${refTableName}.${refColumn}`);
+                            }
+
+                            if (onDelete === 'SET NULL') {
+                                const fkColMeta = (otherTable.columns || []).find(c => c && c.name && c.name.toLowerCase() === fk.column.toLowerCase());
+                                if (fkColMeta && fkColMeta.notNull) {
+                                    throw new Error(`无法执行 SET NULL：外键列 ${otherTableName}.${fk.column} 为 NOT NULL`);
+                                }
+                                for (const r of affected) {
+                                    r[fk.column] = null;
+                                }
+                                modifiedTables.add(otherTableName);
+                                continue;
+                            }
+
+                            if (onDelete === 'CASCADE') {
+                                const childPkCol = (otherTable.columns || []).find(c => c && c.primaryKey);
+                                const childKeys = new Set();
+                                if (childPkCol) {
+                                    for (const r of affected) {
+                                        const v = r[childPkCol.name];
+                                        if (v !== null && v !== undefined) childKeys.add(String(v));
                                     }
                                 }
+
+                                const remaining = otherData.filter(r => {
+                                    const v = r ? r[fk.column] : undefined;
+                                    if (v === null || v === undefined) return true;
+                                    return !deletingKeys.has(String(v));
+                                });
+                                otherData.length = 0;
+                                otherData.push(...remaining);
+                                modifiedTables.add(otherTableName);
+
+                                if (childPkCol && childKeys.size > 0) {
+                                    queue.push({ refTableName: otherTableName, refColumn: childPkCol.name, deletingKeys: childKeys });
+                                }
+                                continue;
                             }
+
+                            throw new Error(`不支持的 ON DELETE 动作: ${onDelete}`);
                         }
                     }
                 }
@@ -2222,21 +2267,42 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
             const deletedCount = originalLength - tableDataArray.length;
 
-            if (useTableStorage && deletedCount > 0) {
+            if (deletedCount > 0) {
+                modifiedTables.add(tableName);
+            }
+
+            if (useTableStorage) {
                 if (inTransaction) {
-                    transactionModifiedTables.add(tableKey);
+                    for (const t of modifiedTables) {
+                        transactionModifiedTables.add(`${currentDatabase}.${t}`);
+                    }
                 } else {
-                    const saveResult = await saveTableData(currentDatabase, tableName, true);
-                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                    for (const t of modifiedTables) {
+                        const saveResult = await saveTableData(currentDatabase, t, true);
+                        if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                    }
                 }
             }
             return { type: 'message', message: `成功删除 ${deletedCount} 行数据`, status: 'success' };
         }
 
-        function executeAlterTable(sql) {
+        async function executeAlterTable(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             let match;
-            
+
+            const persistCurrentDbMetadata = async () => {
+                if (!useTableStorage) return;
+                if (inTransaction) {
+                    transactionModifiedDatabases.add(currentDatabase);
+                    return;
+                }
+                const saveResult = await saveMetadata(currentDatabase);
+                if (!saveResult || !saveResult.ok) {
+                    throw new Error(saveResult && saveResult.errorMessage ? saveResult.errorMessage : '保存元数据失败');
+                }
+                localStorage.setItem('minisql_metadata', JSON.stringify({ databases, tableVersions }));
+            };
+
             // ALTER TABLE ADD FOREIGN KEY (必须在 ADD COLUMN 之前检查)
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+ADD\s+(?:CONSTRAINT\s+(\w+)\s+)?FOREIGN\s+KEY\s*\((\w+)\)\s+REFERENCES\s+(\w+)\s*\((\w+)\)(?:\s+ON\s+DELETE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION))?(?:\s+ON\s+UPDATE\s+(CASCADE|SET NULL|RESTRICT|NO ACTION))?/i);
             if (match) {
@@ -2247,31 +2313,35 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 const refColumn = match[5];
                 const onDelete = match[6] ? match[6].toUpperCase() : 'RESTRICT';
                 const onUpdate = match[7] ? match[7].toUpperCase() : 'RESTRICT';
-                
+
                 const table = databases[currentDatabase].tables[tableName];
                 if (!table) throw new Error(`表 '${tableName}' 不存在`);
                 if (!table.columns.find(c => c.name.toLowerCase() === column.toLowerCase())) throw new Error(`列 '${column}' 不存在`);
-                
+
                 const refTableObj = databases[currentDatabase].tables[refTable];
                 if (!refTableObj) throw new Error(`引用的表 '${refTable}' 不存在`);
                 if (!refTableObj.columns.find(c => c.name.toLowerCase() === refColumn.toLowerCase())) throw new Error(`引用的列 '${refTable}.${refColumn}' 不存在`);
-                
+
                 if (!table.foreignKeys) table.foreignKeys = [];
                 if (table.foreignKeys.find(fk => fk.column.toLowerCase() === column.toLowerCase())) throw new Error(`列 '${column}' 已有外键约束`);
-                
+
                 // 验证现有数据满足外键约束
-                const refValues = new Set(refTableObj.data.map(r => r[refColumn]));
-                for (const row of table.data) {
+                const refData = useTableStorage ? await getTableData(currentDatabase, refTable) : refTableObj.data;
+                const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
+                const refValues = new Set(refData.map(r => r[refColumn]));
+                for (const row of tableDataArray) {
                     const val = row[column];
                     if (val !== null && val !== undefined && !refValues.has(val)) {
                         throw new Error(`无法添加外键：现有数据 ${column}=${val} 在 ${refTable}.${refColumn} 中不存在`);
                     }
                 }
-                
+
                 table.foreignKeys.push({ name: constraintName, column, refTable, refColumn, onDelete, onUpdate });
+
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功添加外键约束 '${constraintName}': ${tableName}(${column}) → ${refTable}(${refColumn})`, status: 'success' };
             }
-            
+
             // ALTER TABLE DROP FOREIGN KEY (必须在 DROP COLUMN 之前检查)
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+DROP\s+FOREIGN\s+KEY\s+(\w+)/i);
             if (match) {
@@ -2279,15 +2349,18 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 const table = databases[currentDatabase].tables[tableName];
                 if (!table) throw new Error(`表 '${tableName}' 不存在`);
                 if (!table.foreignKeys) table.foreignKeys = [];
+
                 const fkIdx = table.foreignKeys.findIndex(fk => {
                     const resolvedName = (fk && (fk.name || (fk.column ? (`fk_${tableName}_${fk.column}`) : ''))) || '';
                     return resolvedName.toLowerCase() === fkName.toLowerCase();
                 });
                 if (fkIdx === -1) throw new Error(`外键约束 '${fkName}' 不存在`);
                 table.foreignKeys.splice(fkIdx, 1);
+
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功删除外键约束 '${fkName}'`, status: 'success' };
             }
-            
+
             // ALTER TABLE ADD COLUMN
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+ADD\s+(?:COLUMN\s+)?(\w+)\s+(\w+)(?:\s*\((\d+)\))?/i);
             if (match) {
@@ -2296,9 +2369,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (!table) throw new Error(`表 '${tableName}' 不存在`);
                 const newCol = { name: match[2], type: match[3].toUpperCase(), size: match[4] ? parseInt(match[4]) : null, primaryKey: false, notNull: false };
                 table.columns.push(newCol);
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功添加列 '${newCol.name}'`, status: 'success' };
             }
-            
+
             // ALTER TABLE DROP COLUMN
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+DROP\s+(?:COLUMN\s+)?(\w+)/i);
             if (match) {
@@ -2331,9 +2405,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
                 table.columns.splice(colIndex, 1);
                 table.data.forEach(row => delete row[colName]);
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功删除列 '${colName}'`, status: 'success' };
             }
-            
+
             // ALTER TABLE MODIFY COLUMN (修改字段类型)
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+MODIFY\s+(?:COLUMN\s+)?(\w+)\s+(\w+)(?:\s*\((\d+)\))?/i);
             if (match) {
@@ -2344,9 +2419,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (!col) throw new Error(`列 '${colName}' 不存在`);
                 col.type = match[3].toUpperCase();
                 col.size = match[4] ? parseInt(match[4]) : null;
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功修改列 '${colName}' 类型为 ${col.type}${col.size ? `(${col.size})` : ''}`, status: 'success' };
             }
-            
+
             // ALTER TABLE RENAME COLUMN (重命名字段)
             match = sql.match(/ALTER\s+TABLE\s+(\w+)\s+RENAME\s+COLUMN\s+(\w+)\s+TO\s+(\w+)/i);
             if (match) {
@@ -2358,9 +2434,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (table.columns.find(c => c.name.toLowerCase() === newColName.toLowerCase())) throw new Error(`列 '${newColName}' 已存在`);
                 col.name = newColName;
                 table.data.forEach(row => { row[newColName] = row[oldColName]; delete row[oldColName]; });
+                await persistCurrentDbMetadata();
                 return { type: 'message', message: `成功将列 '${oldColName}' 重命名为 '${newColName}'`, status: 'success' };
             }
-            
+
             throw new Error('ALTER TABLE 语法错误，支持: ADD, DROP, MODIFY, RENAME COLUMN, ADD/DROP FOREIGN KEY');
         }
 
@@ -2546,24 +2623,85 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 }
                 
                 exportBtn.style.display = 'inline-block'; // 显示导出按钮
+
+                const canRowDelete = (() => {
+                    const meta = result.meta;
+                    if (!meta || meta.kind !== 'select') return false;
+                    if (!meta.tableName || !meta.pkColumn) return false;
+                    if (!currentDatabase || !databases[currentDatabase] || !databases[currentDatabase].tables) return false;
+                    if (!databases[currentDatabase].tables[meta.tableName]) return false;
+                    return Array.isArray(result.columns) && result.columns.includes(meta.pkColumn);
+                })();
                 
                 let html = '<div class="result-table-wrapper"><table><thead><tr>';
                 for (const col of result.columns) {
                     html += `<th>${col}</th>`;
                 }
+                if (canRowDelete) {
+                    html += '<th>操作</th>';
+                }
                 html += '</tr></thead><tbody>';
                 
-                for (const row of result.data) {
+                for (let i = 0; i < result.data.length; i++) {
+                    const row = result.data[i];
                     html += '<tr>';
                     for (const col of result.columns) {
                         const val = row[col];
                         html += `<td>${val === null ? '<span style="color:#666">NULL</span>' : val}</td>`;
+                    }
+                    if (canRowDelete) {
+                        html += `<td><button class="btn btn-xs btn-danger" onclick="deleteResultRow(${i})" title="删除该行">🗑</button></td>`;
                     }
                     html += '</tr>';
                 }
                 
                 html += '</tbody></table></div>';
                 area.innerHTML = html;
+            }
+        }
+
+        async function deleteResultRow(rowIndex) {
+            try {
+                if (!lastQueryResult || lastQueryResult.type !== 'table') return;
+                const meta = lastQueryResult.meta;
+                if (!meta || meta.kind !== 'select') {
+                    showResult('当前结果不支持行删除（仅支持单表SELECT且包含主键列）', 'error');
+                    return;
+                }
+                const tableName = meta.tableName;
+                const pkColumn = meta.pkColumn;
+                if (!tableName || !pkColumn) {
+                    showResult('当前结果不支持行删除（缺少表名或主键列）', 'error');
+                    return;
+                }
+                if (!Array.isArray(lastQueryResult.data) || rowIndex < 0 || rowIndex >= lastQueryResult.data.length) return;
+                const row = lastQueryResult.data[rowIndex];
+                const pkVal = row ? row[pkColumn] : undefined;
+                if (pkVal === null || pkVal === undefined) {
+                    showResult('当前行无法删除：主键值为空', 'error');
+                    return;
+                }
+
+                if (!confirm(`确定删除 ${tableName} 表中该行数据吗？\n${pkColumn} = ${pkVal}`)) return;
+
+                const sqlLiteral = (v) => {
+                    if (v === null || v === undefined) return 'NULL';
+                    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+                    if (typeof v === 'boolean') return v ? '1' : '0';
+                    return `'${String(v).replace(/'/g, "''")}'`;
+                };
+
+                const sql = `DELETE FROM ${tableName} WHERE ${pkColumn} = ${sqlLiteral(pkVal)}`;
+                const result = await executeDelete(sql);
+                displayResult(result);
+
+                lastQueryResult.data.splice(rowIndex, 1);
+
+                lastQueryResult.message = `查询到 ${lastQueryResult.data.length} 行数据`;
+                displayResult(lastQueryResult);
+                renderTableList();
+            } catch (e) {
+                showResult('删除失败: ' + e.message, 'error');
             }
         }
         
