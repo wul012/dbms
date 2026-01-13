@@ -107,17 +107,17 @@
         ],
         "foreignKeys": [
           {
-            "name": "fk_enrollments_student_id",
-            "column": "student_id",
-            "refTable": "students",
+            "name": "fk_enrollments_class_id",
+            "column": "class_id",
+            "refTable": "classes",
             "refColumn": "id",
             "onDelete": "RESTRICT",
             "onUpdate": "RESTRICT"
           },
           {
-            "name": "fk_enrollments_class_id",
-            "column": "class_id",
-            "refTable": "classes",
+            "name": "fk_enrollments_student_id",
+            "column": "student_id",
+            "refTable": "students",
             "refColumn": "id",
             "onDelete": "RESTRICT",
             "onUpdate": "RESTRICT"

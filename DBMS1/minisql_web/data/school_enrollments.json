@@ -1,14 +1,14 @@
 {
-  "version": "2026-01-13T07:13:26.069Z",
+  "version": "2026-01-13T15:36:34.457Z",
   "data": [
     {
       "id": 1,
-      "student_id": 1,
+      "student_id": null,
       "class_id": 1
     },
     {
       "id": 2,
-      "student_id": 1,
+      "student_id": null,
       "class_id": 2
     },
     {

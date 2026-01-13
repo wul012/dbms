@@ -507,7 +507,7 @@
             const otherTables = Object.keys(databases[currentDatabase].tables).filter(t => t !== tableName);
 
             fkContainer.innerHTML = foreignKeys.map((fk, i) => `
-                <div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:1px solid #e9ecef;font-size:11px" data-fk-name="${fk.name || ('fk_' + tableName + '_' + fk.column)}">
+                <div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr 1fr 40px;gap:8px;padding:6px 0;border-bottom:1px solid #e9ecef;font-size:11px" data-fk-name="${fk.name || ('fk_' + tableName + '_' + fk.column)}" data-fk-original-column="${fk.column}" data-fk-original-ref-table="${fk.refTable}" data-fk-original-ref-column="${fk.refColumn}" data-fk-original-on-delete="${fk.onDelete || 'RESTRICT'}" data-fk-original-on-update="${fk.onUpdate || 'RESTRICT'}">
                     <select class="fk-column" style="padding:5px;font-size:11px">
                         ${table.columns.map(c => `<option value="${c.name}" ${c.name===fk.column?'selected':''}>${c.name}</option>`).join('')}
                     </select>
@@ -665,6 +665,33 @@
                     const onDelete = row.querySelector('.fk-on-delete').value;
                     const onUpdate = row.querySelector('.fk-on-update').value;
                     fkAddSqls.push(`ALTER TABLE ${editingTable} ADD FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE ${onDelete} ON UPDATE ${onUpdate}`);
+                } else if (row.dataset.fkName) {
+                    const fkName = row.dataset.fkName;
+                    const col = row.querySelector('.fk-column').value;
+                    const refTable = row.querySelector('.fk-ref-table').value;
+                    const refCol = row.querySelector('.fk-ref-column').value;
+                    const onDelete = row.querySelector('.fk-on-delete').value;
+                    const onUpdate = row.querySelector('.fk-on-update').value;
+
+                    const eq = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+                    const normAction = (v) => String(v || 'RESTRICT').toUpperCase();
+
+                    const originalColumn = row.dataset.fkOriginalColumn;
+                    const originalRefTable = row.dataset.fkOriginalRefTable;
+                    const originalRefColumn = row.dataset.fkOriginalRefColumn;
+                    const originalOnDelete = row.dataset.fkOriginalOnDelete;
+                    const originalOnUpdate = row.dataset.fkOriginalOnUpdate;
+
+                    const changed = !eq(col, originalColumn)
+                        || !eq(refTable, originalRefTable)
+                        || !eq(refCol, originalRefColumn)
+                        || normAction(onDelete) !== normAction(originalOnDelete)
+                        || normAction(onUpdate) !== normAction(originalOnUpdate);
+
+                    if (changed) {
+                        fkDropSqls.push(`ALTER TABLE ${editingTable} DROP FOREIGN KEY ${fkName}`);
+                        fkAddSqls.push(`ALTER TABLE ${editingTable} ADD CONSTRAINT ${fkName} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE ${onDelete} ON UPDATE ${onUpdate}`);
+                    }
                 }
             });
 
