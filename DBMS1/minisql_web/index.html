@@ -85,20 +85,21 @@
                         <div id="history-list"></div>
                     </div>
                     <div id="syntax-help" class="syntax-help">
-                        <h4 style="color:#00d4ff;margin-bottom:8px">📖 SQL 语法参考</h4>
-                        <p><strong>数据库操作:</strong></p>
-                        <p><code>CREATE DATABASE db;</code> | <code>DROP DATABASE db;</code> | <code>USE db;</code> | <code>SHOW DATABASES;</code></p>
-                        <p><strong>表操作 (DDL):</strong></p>
-                        <p><code>CREATE TABLE t (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50) NOT NULL);</code></p>
-                        <p><code>DROP TABLE t;</code> | <code>RENAME TABLE old TO new;</code> | <code>DESC t;</code> | <code>SHOW TABLES;</code></p>
-                        <p><code>ALTER TABLE t ADD col INT;</code> | <code>ALTER TABLE t DROP col;</code> | <code>ALTER TABLE t MODIFY col VARCHAR(100);</code></p>
-                        <p><code>ALTER TABLE t RENAME COLUMN old TO new;</code></p>
-                        <p><strong>数据操作 (DML):</strong></p>
-                        <p><code>INSERT INTO t (c1,c2) VALUES (v1,v2);</code></p>
-                        <p><code>SELECT * FROM t WHERE c=v ORDER BY c DESC LIMIT 10;</code></p>
-                        <p><code>SELECT t1.*,t2.* FROM t1 JOIN t2 ON t1.id=t2.tid;</code> (多表连接)</p>
-                        <p><code>UPDATE t SET c=v WHERE cond;</code> | <code>DELETE FROM t WHERE cond;</code></p>
-                        <p><strong>条件支持:</strong> =, !=, <>, <, >, <=, >=, LIKE, AND, OR, IS NULL, IS NOT NULL</p>
+                        <h4 style="color:#0022ffa0;margin-bottom:26px">📖 SQL 语法速查（与本项目实际支持一致）</h4>
+                        <p><strong>提示:</strong> 支持多条语句用 <code>;</code> 分隔；建议每条语句以分号结尾。</p>
+                        <p><strong>数据库:</strong> <code>SHOW DATABASES;</code> | <code>CREATE DATABASE db;</code> | <code>DROP DATABASE db;</code> | <code>USE db;</code></p>
+                        <p><strong>表:</strong> <code>SHOW TABLES;</code> | <code>DESC t;</code> | <code>DROP TABLE t;</code> | <code>RENAME TABLE old TO new;</code></p>
+                        <p><strong>创建表:</strong> <code>CREATE TABLE t (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50) NOT NULL, age INT DEFAULT 18);</code></p>
+                        <p><strong>修改表:</strong> <code>ALTER TABLE t ADD col INT;</code> | <code>ALTER TABLE t DROP COLUMN col;</code> | <code>ALTER TABLE t MODIFY col VARCHAR(100);</code> | <code>ALTER TABLE t RENAME COLUMN old TO new;</code></p>
+                        <p><strong>插入/更新/删除:</strong> <code>INSERT INTO t (c1,c2) VALUES (v1,v2);</code> | <code>UPDATE t SET c1 = c1 + 1 WHERE id = 1;</code> | <code>DELETE FROM t WHERE id = 1;</code> | <code>TRUNCATE TABLE t;</code></p>
+                        <p><strong>基础查询:</strong> <code>SELECT * FROM t;</code> | <code>SELECT DISTINCT col FROM t;</code></p>
+                        <p><strong>WHERE 条件:</strong> 支持 <code>=</code> <code>!=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&gt;</code> <code>&lt;=</code> <code>&gt;=</code> <code>AND</code> <code>OR</code> <code>(...)</code> <code>LIKE</code> <code>BETWEEN ... AND ...</code> <code>IN (...)</code> <code>NOT IN (...)</code> <code>IS NULL</code> <code>IS NOT NULL</code></p>
+                        <p><strong>排序/分页:</strong> <code>ORDER BY col ASC|DESC</code> | <code>LIMIT n</code> | <code>LIMIT n OFFSET m</code></p>
+                        <p><strong>聚合/分组:</strong> <code>COUNT/SUM/AVG/MAX/MIN</code> | <code>GROUP BY</code> | <code>HAVING</code></p>
+                        <p><strong>JOIN:</strong> <code>SELECT o.id, p.name FROM orders o JOIN products p ON o.product_id = p.id;</code></p>
+                        <p><strong>事务:</strong> <code>BEGIN;</code> ... <code>COMMIT;</code> / <code>ROLLBACK;</code></p>
+                        <p><strong>索引:</strong> <code>CREATE INDEX idx ON t(col);</code> | <code>CREATE UNIQUE INDEX idx ON t(col);</code> | <code>SHOW INDEXES FROM t;</code> | <code>DROP INDEX idx ON t;</code></p>
+                        <p><strong>外键:</strong> <code>ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY(col) REFERENCES ref(id) ON DELETE SET NULL;</code> | <code>SHOW FOREIGN KEYS FROM t;</code> | <code>ALTER TABLE t DROP FOREIGN KEY fk;</code></p>
                     </div>
                 </div>
 

@@ -52,6 +52,46 @@ minisql_web/data/
 └── locks/
 ```
 
+---
+
+## 🧭 3 分钟上手（新手推荐）
+
+项目已预置示例数据库 **test1**（包含 `users/products/orders/employees/customers` 等表及少量样例数据），下面这组操作在 **Web 页面** 或 **CLI** 都可直接执行。
+
+### 方式 A：Web 页面（推荐）
+
+1. 启动服务：
+
+```bash
+node server.js
+```
+
+2. 打开浏览器访问：
+
+`http://localhost:8080`
+
+3. 在 SQL 编辑器中执行：
+
+```sql
+USE test1;
+SELECT * FROM users;
+SELECT id,name,age FROM users WHERE age BETWEEN 20 AND 30 ORDER BY age DESC;
+SELECT o.id, p.name, o.amount FROM orders o JOIN products p ON o.product_id = p.id ORDER BY o.id;
+SELECT status, COUNT(*) AS cnt FROM orders GROUP BY status HAVING COUNT(*) >= 1;
+```
+
+### 方式 B：命令行（适合脚本/批量）
+
+```bash
+node cli.js -d test1 -e "SELECT * FROM users;"
+node cli.js -d test1 -e "SELECT o.id, p.name FROM orders o JOIN products p ON o.product_id = p.id;"
+```
+
+提示：
+
+1. `-e` 支持多条语句，使用 `;` 分隔
+2. CLI 与 Web 共用同一份 `minisql_web/data/` 数据目录
+
 ### 示例数据库（README 可直接运行）
 
 项目默认数据文件中已预置示例数据库 **test1**（包含 `users/products/orders/employees/customers` 等表及少量样例数据）。
@@ -322,7 +362,8 @@ ROLLBACK;
 | VARCHAR(n) | 可变长字符串 | `name VARCHAR(50)` |
 | TEXT | 长文本 | `content TEXT` |
 | DATETIME | 日期时间 | `created_at DATETIME` |
-| DECIMAL(p,s) | 精确小数 | `price DECIMAL(10,2)` |
+
+说明：本项目以“课程设计”的轻量实现为主，字段类型主要用于展示/元数据保存，不做严格类型系统与强制校验。
 
 ## 🔧 字段约束
 
@@ -330,9 +371,12 @@ ROLLBACK;
 CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(50) NOT NULL,
-    email VARCHAR(100) UNIQUE,
+    email VARCHAR(100),
     age INT DEFAULT 18
 );
+
+-- 如需唯一约束，请用唯一索引表达：
+CREATE UNIQUE INDEX idx_users_email ON users(email);
 ```
 
 - **PRIMARY KEY** - 主键
@@ -369,9 +413,17 @@ minisql_web/
 - **导出（全量）**: `GET /api/backup?scope=all`
 - **导出（单库）**: `GET /api/backup?scope=db&database=<db>`
 - **导入（合并 + 重名自动改名）**: `POST /api/restore?mode=merge&conflict=rename`
-  - 重名库/表会自动改名为 `<name>_importN`
+  - 重名库/表会自动改名为 `<name>_1`、`<name>_2` ...
   - 会同步更新外键引用到新的表名
 - **清空所有数据**: `POST /api/clear-all`
+
+CLI（可选）：
+
+- `node cli.js -d test1 --backup backup_test1.json`
+- `node cli.js --restore backup_test1.json`
+- `node cli.js --clear-all`
+
+注意：`--restore` / `--clear-all` 会写入或删除 `data/` 下文件，属于高风险操作，新手建议优先使用 Web 页面“📤 导出/📥 导入/🗑️ 清空数据”。
 
 ### 快照文件格式（v2.0）
 
