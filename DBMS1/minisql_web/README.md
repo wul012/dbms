@@ -290,10 +290,10 @@ SELECT u.name, o.product
 FROM users u 
 JOIN orders o ON u.id = o.user_id;
 
--- 带别名的连接
-SELECT students.name, enrollments.class_id
-FROM students
-JOIN enrollments ON students.id = enrollments.student_id;
+-- 带别名的连接（test1 示例）
+SELECT o.id, p.name, o.amount
+FROM orders o
+JOIN products p ON o.product_id = p.id;
 ```
 
 ### 事务支持
