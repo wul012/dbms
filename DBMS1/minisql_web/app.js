@@ -17,6 +17,14 @@
         // ==================== 执行历史 ====================
         let sqlHistory = JSON.parse(localStorage.getItem('sql_history') || '[]');
 
+        let enableRowDelete = (() => {
+            try {
+                return JSON.parse(localStorage.getItem('enable_row_delete') || 'false') === true;
+            } catch {
+                return false;
+            }
+        })();
+
         // ==================== 表级版本号 ====================
         let tableVersions = {}; // { 'dbName.tableName': 'version' }
 
@@ -28,6 +36,15 @@
             renderDatabaseList();
             renderTableList();
             updateStorageInfo();
+            const toggle = document.getElementById('toggle-row-delete');
+            if (toggle) {
+                toggle.checked = !!enableRowDelete;
+                toggle.addEventListener('change', () => {
+                    enableRowDelete = !!toggle.checked;
+                    try { localStorage.setItem('enable_row_delete', JSON.stringify(enableRowDelete)); } catch {}
+                    if (lastQueryResult) displayResult(lastQueryResult);
+                });
+            }
             document.getElementById('sql-editor').addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); executeSQL(); }
             });
@@ -2020,16 +2037,79 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
         }
 
         function evaluateWhere(row, whereClause) {
-            // 支持 AND/OR
-            if (whereClause.toUpperCase().includes(' AND ')) {
-                const parts = whereClause.split(/\s+AND\s+/i);
-                return parts.every(p => evaluateCondition(row, p));
-            }
-            if (whereClause.toUpperCase().includes(' OR ')) {
-                const parts = whereClause.split(/\s+OR\s+/i);
-                return parts.some(p => evaluateCondition(row, p));
-            }
-            return evaluateCondition(row, whereClause);
+            const splitTopLevel = (expr, keyword, betweenAware) => {
+                const parts = [];
+                let buf = '';
+                let quote = null;
+                let depth = 0;
+                let pendingBetween = false;
+
+                const isWordChar = (c) => /[A-Za-z0-9_]/.test(c || '');
+                const matchKeywordAt = (s, idx, kw) => {
+                    if (s.substr(idx, kw.length).toUpperCase() !== kw) return false;
+                    const prev = idx > 0 ? s[idx - 1] : ' ';
+                    const next = idx + kw.length < s.length ? s[idx + kw.length] : ' ';
+                    if (isWordChar(prev)) return false;
+                    if (isWordChar(next)) return false;
+                    return true;
+                };
+
+                for (let i = 0; i < expr.length; i++) {
+                    const ch = expr[i];
+
+                    if (quote) {
+                        buf += ch;
+                        if (ch === quote && expr[i - 1] !== '\\') quote = null;
+                        continue;
+                    }
+                    if (ch === '\'' || ch === '"') {
+                        quote = ch;
+                        buf += ch;
+                        continue;
+                    }
+                    if (ch === '(') {
+                        depth++;
+                        buf += ch;
+                        continue;
+                    }
+                    if (ch === ')') {
+                        if (depth > 0) depth--;
+                        buf += ch;
+                        continue;
+                    }
+
+                    if (depth === 0 && matchKeywordAt(expr, i, 'BETWEEN')) {
+                        pendingBetween = true;
+                        buf += expr.substr(i, 'BETWEEN'.length);
+                        i += 'BETWEEN'.length - 1;
+                        continue;
+                    }
+
+                    if (depth === 0 && matchKeywordAt(expr, i, keyword)) {
+                        if (betweenAware && keyword === 'AND' && pendingBetween) {
+                            pendingBetween = false;
+                            buf += expr.substr(i, keyword.length);
+                            i += keyword.length - 1;
+                            continue;
+                        }
+                        if (buf.trim()) parts.push(buf.trim());
+                        buf = '';
+                        i += keyword.length - 1;
+                        continue;
+                    }
+
+                    buf += ch;
+                }
+
+                if (buf.trim()) parts.push(buf.trim());
+                return parts;
+            };
+
+            const orParts = splitTopLevel(whereClause, 'OR', false);
+            return orParts.some((part) => {
+                const andParts = splitTopLevel(part, 'AND', true);
+                return andParts.every(p => evaluateCondition(row, p));
+            });
         }
 
         function evaluateCondition(row, condition) {
@@ -2048,7 +2128,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             };
             
             // BETWEEN ... AND ...
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+BETWEEN\s+(.+?)\s+AND\s+(.+)/i);
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+BETWEEN\s+(.+?)\s+AND\s+(.+)\s*$/i);
             if (match) {
                 const val = resolveVal(match[1]);
                 const min = parseValue(match[2].trim());
@@ -2056,24 +2136,24 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 return val >= min && val <= max;
             }
             
+            // NOT IN (val1, val2, ...)
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+NOT\s+IN\s*\(([^)]+)\)\s*$/i);
+            if (match) {
+                const val = resolveVal(match[1]);
+                const values = match[2].split(',').map(v => parseValue(v.trim()));
+                return !values.some(v => v == val);
+            }
+
             // IN (val1, val2, ...)
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IN\s*\(([^)]+)\)/i);
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IN\s*\(([^)]+)\)\s*$/i);
             if (match) {
                 const val = resolveVal(match[1]);
                 const values = match[2].split(',').map(v => parseValue(v.trim()));
                 return values.some(v => v == val);
             }
             
-            // NOT IN (val1, val2, ...)
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+NOT\s+IN\s*\(([^)]+)\)/i);
-            if (match) {
-                const val = resolveVal(match[1]);
-                const values = match[2].split(',').map(v => parseValue(v.trim()));
-                return !values.some(v => v == val);
-            }
-            
             // LIKE
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+LIKE\s+'([^']+)'/i);
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+LIKE\s+'([^']+)'\s*$/i);
             if (match) {
                 const val = resolveVal(match[1]);
                 const pattern = match[2].replace(/%/g, '.*').replace(/_/g, '.');
@@ -2081,14 +2161,14 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             }
             
             // IS NULL / IS NOT NULL
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IS\s+(NOT\s+)?NULL/i);
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s+IS\s+(NOT\s+)?NULL\s*$/i);
             if (match) {
                 const val = resolveVal(match[1]);
                 return match[2] ? val !== null && val !== undefined : val === null || val === undefined;
             }
             
             // 比较运算符
-            match = condition.match(/([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s*(=|!=|<>|<=|>=|<|>)\s*(.+)/);
+            match = condition.match(/^\s*([\w.]+|\w+\s*\(\s*(?:\*|\w+)\s*\))\s*(=|!=|<>|<=|>=|<|>)\s*(.+?)\s*$/);
             if (match) {
                 const colName = resolveKey(match[1]);
                 const op = match[2];
@@ -2652,6 +2732,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 exportBtn.style.display = 'inline-block'; // 显示导出按钮
 
                 const canRowDelete = (() => {
+                    if (!enableRowDelete) return false;
                     const meta = result.meta;
                     if (!meta || meta.kind !== 'select') return false;
                     if (!meta.tableName || !meta.pkColumn) return false;
@@ -2689,12 +2770,17 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
         async function deleteResultRow(rowIndex) {
             try {
+                if (!enableRowDelete) {
+                    showResult('行删除已关闭：请先在右上角勾选“启用行删除”', 'info');
+                    return;
+                }
                 if (!lastQueryResult || lastQueryResult.type !== 'table') return;
                 const meta = lastQueryResult.meta;
                 if (!meta || meta.kind !== 'select') {
                     showResult('当前结果不支持行删除（仅支持单表SELECT且包含主键列）', 'error');
                     return;
                 }
+                
                 const tableName = meta.tableName;
                 const pkColumn = meta.pkColumn;
                 if (!tableName || !pkColumn) {
