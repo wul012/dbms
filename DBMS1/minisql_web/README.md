@@ -14,6 +14,19 @@ MiniSQL 是一个完整的数据库管理系统，支持：
 
 ---
 
+## 🌟 课程设计亮点（重点）
+
+- **分库分表持久化（JSON）**: 以数据库/表为粒度拆分为多个文件，元数据与表数据分离，便于管理与扩展。
+- **懒加载（Lazy Load）表数据**: Web 端优先加载所有数据库的元数据，表数据按需加载，减少启动时 I/O 与内存占用。
+- **并发控制（表级锁 + 乐观锁）**: 服务端使用 `.lock` 文件实现表级互斥；同时基于 `version` 做乐观锁冲突检测，避免“后写覆盖先写”。
+- **事务支持（快照 + 延迟提交）**: BEGIN 后在内存中保存快照；COMMIT 时统一落盘，ROLLBACK 可还原。
+- **索引管理 + 唯一性约束**: 支持普通/唯一索引；唯一索引对 `NULL` 进行跳过检查；对 `INSERT/UPDATE` 做约束校验。
+- **索引加速查询（本次课程设计优化点）**: Web 端对简单 `WHERE`（等值/IN）优先使用索引缩小候选行集合，再执行完整条件过滤，提升查询效率。
+- **备份/恢复（快照）**: 提供全量/单库导出；导入支持“合并 + 冲突重命名”，并同步更新外键引用。
+- **可视化能力**: ER 图展示表结构、主键/外键关系；查询结果支持 CSV 导出与行级删除（单表且包含主键列）。
+
+---
+
 ## 🚀 快速开始
 
 ### 环境要求
@@ -167,6 +180,12 @@ DROP INDEX idx_users_email_demo ON users;
 
 下面这段 SQL 会创建一个新的演示数据库 `idx_demo`，并展示：当 `WHERE` 子句满足条件时，查询结果提示里会出现 `使用索引: <index_name>`。
 
+如果你需要重复执行，请先手动执行（或在 Web 左侧数据库列表点击删除按钮）：
+
+```sql
+DROP DATABASE idx_demo;
+```
+
 ```sql
 CREATE DATABASE idx_demo;
 USE idx_demo;
@@ -188,12 +207,15 @@ CREATE INDEX idx_employees_dept ON employees (dept);
 SHOW INDEXES FROM employees;
 
 -- 等值条件：走索引
+USE idx_demo;
 SELECT * FROM employees WHERE dept = 'HR';
 
 -- IN 条件：走索引
+USE idx_demo;
 SELECT * FROM employees WHERE dept IN ('R&D', 'Sales');
 
 -- 不满足支持范围的条件：不保证走索引
+USE idx_demo;
 SELECT * FROM employees WHERE age >= 30;
 ```
 
@@ -204,6 +226,139 @@ SELECT * FROM employees WHERE age >= 30;
    - `WHERE col = value`
    - `WHERE col IN (v1, v2, ...)`
 3. 复杂条件（如 AND/OR 组合、范围条件、LIKE、BETWEEN、多列索引匹配等）会回退到普通过滤逻辑
+
+---
+
+## 🧠 实现原理（可核对代码）
+
+本项目以“课程设计”实现为主，强调：可运行、可演示、可读性强。下面列出与课程设计要求高度相关的核心机制（包含关键代码片段）。如果你希望更长、更系统的说明，可在此目录新增的 `README_DESIGN.md` 查看。
+
+### 1) 索引数据结构：key → 行号列表
+
+索引数据保存在 `data/<db>_metadata.json` 的 `indexes.data` 中，其结构是：
+
+- 单列/多列索引统一编码成 `key = col1|col2|...`
+- `indexes.data[key] = [rowIndex1, rowIndex2, ...]`
+
+Web 端会在写操作后重建该映射：
+
+```js
+function rebuildIndexDataForTable(table, dataArray) {
+    if (!table || !table.indexes) return;
+    const arr = Array.isArray(dataArray) ? dataArray : [];
+    for (const idx of Object.values(table.indexes)) {
+        if (!idx || !Array.isArray(idx.columns) || idx.columns.length === 0) continue;
+        const indexData = {};
+        arr.forEach((row, i) => {
+            const key = idx.columns.map(c => {
+                const v = getRowValueCaseInsensitive(row, c);
+                return v === undefined || v === null ? '' : String(v);
+            }).join('|');
+            if (!indexData[key]) indexData[key] = [];
+            indexData[key].push(i);
+        });
+        idx.data = indexData;
+    }
+}
+```
+
+### 2) 索引加速查询：解析简单 WHERE 并预过滤候选行
+
+当前优化只针对“单表 + 简单 WHERE”，通过解析 `WHERE` 识别两种模式：
+
+- `col = value`
+- `col IN (v1, v2, ...)`
+
+```js
+function parseSimpleWhereForIndex(whereClause) {
+    if (!whereClause) return null;
+    const s = String(whereClause).trim();
+    if (!s) return null;
+    if (/\bAND\b/i.test(s) || /\bOR\b/i.test(s)) return null;
+    let m;
+    m = s.match(/^\s*([\w.]+)\s*=\s*(.+?)\s*$/);
+    if (m) {
+        const col = m[1].split('.').pop();
+        const v = parseValue(String(m[2]).trim());
+        if (v === null || v === undefined) return null;
+        return { column: col, values: [v] };
+    }
+    m = s.match(/^\s*([\w.]+)\s+IN\s*\(([^)]+)\)\s*$/i);
+    if (m) {
+        const col = m[1].split('.').pop();
+        const values = parseValues(String(m[2]).trim()).filter(v => v !== null && v !== undefined);
+        if (values.length === 0) return null;
+        return { column: col, values };
+    }
+    return null;
+}
+```
+
+在 `executeSelect` 的 WHERE 处理处，若命中索引，会先取候选集再执行 `evaluateWhere` 做最终判断：
+
+```js
+if (whereClause) {
+    const indexHit = tryApplyIndexWhere(table, tableDataArray, whereClause);
+    if (indexHit && indexHit.indexName) {
+        usedIndexName = indexHit.indexName;
+        data = (indexHit.rows || []).filter(row => evaluateWhere(row, whereClause));
+    } else {
+        data = data.filter(row => evaluateWhere(row, whereClause));
+    }
+}
+```
+
+### 3) 写操作后的索引维护 + 唯一性检查
+
+索引属于冗余结构，必须在 DML 后维护。
+
+- `INSERT/UPDATE/DELETE/TRUNCATE` 后会触发 `rebuildIndexDataForTable(...)`
+- `UPDATE` 失败会回滚到快照
+- 唯一索引对 `NULL` 跳过检查
+
+（相关函数：`ensurePrimaryKeyUnique`、`ensureUniqueIndexes`、`rebuildIndexDataForTable`）
+
+### 4) 并发控制：表级锁 + 乐观锁版本号
+
+服务端（`server.js`）通过 `.lock` 文件实现表级互斥：
+
+```js
+function acquireTableLock(dbName, tableName, timeout = 3000) {
+    const lockFile = path.join(LOCK_DIR, `${dbName}_${tableName}.lock`);
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        try {
+            fs.writeFileSync(lockFile, process.pid.toString(), { flag: 'wx' });
+            return true;
+        } catch (e) {
+            if (e.code === 'EEXIST') {
+                // 锁超时清理 + 自旋等待
+            } else {
+                return false;
+            }
+        }
+    }
+    return false;
+}
+```
+
+保存表数据（`/api/save-table`）时，会比较客户端的 `expectedVersion` 与服务器端文件中的 `version`，不一致则返回 `409`：
+
+```js
+if (fs.existsSync(tableFile) && expectedVersion) {
+    const existing = JSON.parse(fs.readFileSync(tableFile, 'utf8'));
+    if (existing.version && existing.version !== expectedVersion) {
+        releaseTableLock(database, table);
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: '表数据冲突：其他进程已修改，请刷新页面' }));
+        return;
+    }
+}
+```
+
+### 5) 更详细的设计说明
+
+如需更完整的“数据格式、模块划分、关键流程图/伪代码、边界与限制”，请查看：`README_DESIGN.md`。
 
 ### 外键约束
 
@@ -248,19 +403,16 @@ ALTER TABLE orders DROP FOREIGN KEY fk_user;
 USE test1;
 
 -- 插入数据
-INSERT INTO users (id, name, age) VALUES (1, '张三', 25);
+INSERT INTO users (id, name, age) VALUES (100, 'DML演示', 25);
 
 -- 查询数据
-SELECT * FROM users WHERE age > 20 ORDER BY id DESC LIMIT 10;
+SELECT * FROM users WHERE id = 100;
 
 -- 更新数据
-UPDATE users SET age = 26 WHERE id = 1;
+UPDATE users SET age = 26 WHERE id = 100;
 
 -- 删除数据
-DELETE FROM users WHERE id = 1;
-
--- 清空表
-TRUNCATE TABLE users;
+DELETE FROM users WHERE id = 100;
 ```
 
 ### 聚合函数
@@ -389,19 +541,21 @@ JOIN products p ON o.product_id = p.id;
 ### 事务支持
 
 ```sql
--- 开始事务
+USE test1;
+
+-- 示例 A：ROLLBACK（可重复执行，最终不会落盘）
 BEGIN;
--- 或 START TRANSACTION;
+INSERT INTO users (id, name) VALUES (101, '事务演示');
+UPDATE users SET name = '事务演示_已更新' WHERE id = 101;
+ROLLBACK;
 
--- 执行操作
-INSERT INTO users (id, name) VALUES (1, '张三');
-UPDATE users SET name = '李四' WHERE id = 1;
-
--- 提交事务 (保存更改)
+-- 示例 B：COMMIT（会持久化写入，需要你自行清理）
+BEGIN;
+INSERT INTO users (id, name) VALUES (102, '事务提交演示');
 COMMIT;
 
--- 或回滚事务 (撤销更改)
-ROLLBACK;
+-- 清理（可选）
+DELETE FROM users WHERE id = 102;
 ```
 
 ## 📁 数据类型支持
