@@ -139,21 +139,71 @@ ALTER TABLE users RENAME COLUMN name TO username;
 ### 索引管理
 
 ```sql
--- 创建普通索引
-CREATE INDEX idx_name ON users (name);
+USE test1;
 
--- 创建唯一索引
-CREATE UNIQUE INDEX idx_email ON users (email);
-
--- 创建复合索引
-CREATE INDEX idx_city_age ON users (city, age);
+-- 创建普通索引（可直接执行）
+CREATE INDEX idx_users_age_demo ON users (age);
 
 -- 查看表的索引
 SHOW INDEXES FROM users;
 
--- 删除索引
-DROP INDEX idx_name ON users;
+-- 创建唯一索引（可直接执行；NULL 值不参与唯一性检查）
+CREATE UNIQUE INDEX idx_users_email_demo ON users (email);
+
+-- 验证唯一索引：插入重复 email 会报错
+INSERT INTO users (id, name, age, email) VALUES (99, '重复邮箱', 20, 'zhangsan@example.com');
+
+-- 删除索引（如需重复演示，可先 DROP 再 CREATE）
+DROP INDEX idx_users_age_demo ON users;
+DROP INDEX idx_users_email_demo ON users;
 ```
+
+说明：
+
+1. `SHOW INDEXES FROM <table>;` 会展示主键索引 `PRIMARY` 和你创建的索引
+2. 项目会在 `data/<db>_metadata.json` 保存索引定义；其中 `indexes.data` 会在 `INSERT/UPDATE/DELETE/TRUNCATE` 后自动重建，用于模拟 BTree 的 key→row 映射，也会被 Web 端用于简单的“索引加速查询”。
+
+### 索引加速查询（idx_demo 演示，可直接执行）
+
+下面这段 SQL 会创建一个新的演示数据库 `idx_demo`，并展示：当 `WHERE` 子句满足条件时，查询结果提示里会出现 `使用索引: <index_name>`。
+
+```sql
+CREATE DATABASE idx_demo;
+USE idx_demo;
+
+CREATE TABLE employees (
+    id INT PRIMARY KEY,
+    name VARCHAR(50),
+    dept VARCHAR(20),
+    age INT
+);
+
+INSERT INTO employees (id, name, dept, age) VALUES (1, 'Alice', 'R&D', 27);
+INSERT INTO employees (id, name, dept, age) VALUES (2, 'Bob', 'R&D', 31);
+INSERT INTO employees (id, name, dept, age) VALUES (3, 'Cathy', 'HR', 29);
+INSERT INTO employees (id, name, dept, age) VALUES (4, 'David', 'Sales', 35);
+INSERT INTO employees (id, name, dept, age) VALUES (5, 'Eva', 'HR', 26);
+
+CREATE INDEX idx_employees_dept ON employees (dept);
+SHOW INDEXES FROM employees;
+
+-- 等值条件：走索引
+SELECT * FROM employees WHERE dept = 'HR';
+
+-- IN 条件：走索引
+SELECT * FROM employees WHERE dept IN ('R&D', 'Sales');
+
+-- 不满足支持范围的条件：不保证走索引
+SELECT * FROM employees WHERE age >= 30;
+```
+
+支持范围（当前 Web 端优化）：
+
+1. 仅对单表 `SELECT` 的 `WHERE` 进行优化
+2. 仅支持“单列索引 + 简单条件”两类：
+   - `WHERE col = value`
+   - `WHERE col IN (v1, v2, ...)`
+3. 复杂条件（如 AND/OR 组合、范围条件、LIKE、BETWEEN、多列索引匹配等）会回退到普通过滤逻辑
 
 ### 外键约束
 
@@ -413,7 +463,7 @@ minisql_web/
 - **导出（全量）**: `GET /api/backup?scope=all`
 - **导出（单库）**: `GET /api/backup?scope=db&database=<db>`
 - **导入（合并 + 重名自动改名）**: `POST /api/restore?mode=merge&conflict=rename`
-  - 重名库/表会自动改名为 `<name>_1`、`<name>_2` ...
+  - 重名库/表会自动改名为 `<name>_import1`、`<name>_import2` ...
   - 会同步更新外键引用到新的表名
 - **清空所有数据**: `POST /api/clear-all`
 

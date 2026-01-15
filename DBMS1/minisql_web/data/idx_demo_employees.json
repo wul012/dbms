@@ -1,0 +1,35 @@
+{
+  "version": "2026-01-15T09:43:59.601Z",
+  "data": [
+    {
+      "id": 1,
+      "name": "Alice",
+      "dept": "R&D",
+      "age": 27
+    },
+    {
+      "id": 2,
+      "name": "Bob",
+      "dept": "R&D",
+      "age": 31
+    },
+    {
+      "id": 3,
+      "name": "Cathy",
+      "dept": "HR",
+      "age": 29
+    },
+    {
+      "id": 4,
+      "name": "David",
+      "dept": "Sales",
+      "age": 35
+    },
+    {
+      "id": 5,
+      "name": "Eva",
+      "dept": "HR",
+      "age": 26
+    }
+  ]
+}

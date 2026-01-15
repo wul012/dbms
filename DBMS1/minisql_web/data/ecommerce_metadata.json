@@ -122,6 +122,13 @@
             "autoIncrement": false,
             "notNull": false,
             "default": null
+          },
+          {
+            "name": "g",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "notNull": false
           }
         ],
         "foreignKeys": [

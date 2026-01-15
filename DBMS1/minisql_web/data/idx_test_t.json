@@ -1,0 +1,25 @@
+{
+  "version": "2026-01-15T07:10:30.813Z",
+  "data": [
+    {
+      "id": 1,
+      "email": "b@x.com",
+      "age": 20
+    },
+    {
+      "id": 2,
+      "email": "b@x.com",
+      "age": 20
+    },
+    {
+      "id": 10,
+      "email": "b@x.com",
+      "age": 40
+    },
+    {
+      "id": 11,
+      "email": "c@x.com",
+      "age": 22
+    }
+  ]
+}

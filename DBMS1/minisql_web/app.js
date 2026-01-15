@@ -299,6 +299,147 @@
             }
         }
 
+        async function persistCurrentDbMetadata() {
+            if (!useTableStorage) return;
+            if (!currentDatabase) return;
+            if (inTransaction) {
+                transactionModifiedDatabases.add(currentDatabase);
+                return;
+            }
+            const saveResult = await saveMetadata(currentDatabase);
+            if (!saveResult || !saveResult.ok) {
+                throw new Error(saveResult && saveResult.errorMessage ? saveResult.errorMessage : '保存元数据失败');
+            }
+            localStorage.setItem('minisql_metadata', JSON.stringify({ databases, tableVersions }));
+        }
+
+        function resolveColumnNameFromTable(table, name) {
+            const n = String(name || '').trim();
+            if (!n) return n;
+            const found = (table && table.columns ? table.columns : []).find(c => c && c.name && c.name.toLowerCase() === n.toLowerCase());
+            return found ? found.name : n;
+        }
+
+        function getRowValueCaseInsensitive(row, name) {
+            if (!row) return undefined;
+            if (Object.prototype.hasOwnProperty.call(row, name)) return row[name];
+            const lower = String(name || '').toLowerCase();
+            const key = Object.keys(row).find(k => String(k).toLowerCase() === lower);
+            return key ? row[key] : undefined;
+        }
+
+        function ensurePrimaryKeyUnique(table, dataArray) {
+            const pkCol = (table && table.columns ? table.columns : []).find(c => c && c.primaryKey);
+            if (!pkCol) return;
+            const seen = new Set();
+            for (const row of dataArray || []) {
+                const v = getRowValueCaseInsensitive(row, pkCol.name);
+                if (v === null || v === undefined) continue;
+                const k = String(v);
+                if (seen.has(k)) throw new Error(`主键 '${pkCol.name}' 值 '${v}' 已存在`);
+                seen.add(k);
+            }
+        }
+
+        function ensureUniqueIndexes(table, dataArray) {
+            const indexes = table && table.indexes ? table.indexes : {};
+            for (const [idxName, idx] of Object.entries(indexes)) {
+                if (!idx || !idx.unique) continue;
+                const cols = Array.isArray(idx.columns) ? idx.columns : [];
+                if (cols.length === 0) continue;
+                const seen = new Set();
+                for (const row of dataArray || []) {
+                    const values = cols.map(c => getRowValueCaseInsensitive(row, c));
+                    if (values.some(v => v === null || v === undefined)) continue;
+                    const key = values.map(v => String(v)).join('|');
+                    if (seen.has(key)) throw new Error(`唯一索引约束失败: ${idxName}(${cols.join(', ')}) 存在重复值`);
+                    seen.add(key);
+                }
+            }
+        }
+
+        function rebuildIndexDataForTable(table, dataArray) {
+            if (!table || !table.indexes) return;
+            const arr = Array.isArray(dataArray) ? dataArray : [];
+            for (const idx of Object.values(table.indexes)) {
+                if (!idx || !Array.isArray(idx.columns) || idx.columns.length === 0) continue;
+                const indexData = {};
+                arr.forEach((row, i) => {
+                    const key = idx.columns.map(c => {
+                        const v = getRowValueCaseInsensitive(row, c);
+                        return v === undefined || v === null ? '' : String(v);
+                    }).join('|');
+                    if (!indexData[key]) indexData[key] = [];
+                    indexData[key].push(i);
+                });
+                idx.data = indexData;
+            }
+        }
+
+        function parseSimpleWhereForIndex(whereClause) {
+            if (!whereClause) return null;
+            const s = String(whereClause).trim();
+            if (!s) return null;
+            if (/\bAND\b/i.test(s) || /\bOR\b/i.test(s)) return null;
+
+            let m;
+            m = s.match(/^\s*([\w.]+)\s*=\s*(.+?)\s*$/);
+            if (m) {
+                const col = m[1].split('.').pop();
+                const v = parseValue(String(m[2]).trim());
+                if (v === null || v === undefined) return null;
+                return { column: col, values: [v] };
+            }
+
+            m = s.match(/^\s*([\w.]+)\s+IN\s*\(([^)]+)\)\s*$/i);
+            if (m) {
+                const col = m[1].split('.').pop();
+                const values = parseValues(String(m[2]).trim()).filter(v => v !== null && v !== undefined);
+                if (values.length === 0) return null;
+                return { column: col, values };
+            }
+
+            return null;
+        }
+
+        function tryApplyIndexWhere(table, dataArray, whereClause) {
+            if (!table || !table.indexes || !dataArray) return null;
+            const parsed = parseSimpleWhereForIndex(whereClause);
+            if (!parsed) return null;
+
+            const colName = resolveColumnNameFromTable(table, parsed.column);
+            const candidates = Object.entries(table.indexes).filter(([name, idx]) => {
+                if (!idx || !Array.isArray(idx.columns) || idx.columns.length !== 1) return false;
+                return String(idx.columns[0]).toLowerCase() === String(colName).toLowerCase();
+            });
+            if (candidates.length === 0) return null;
+
+            candidates.sort((a, b) => (b[1] && b[1].unique ? 1 : 0) - (a[1] && a[1].unique ? 1 : 0));
+            const [indexName, idx] = candidates[0];
+            const indexData = idx && idx.data ? idx.data : null;
+            if (!indexData || typeof indexData !== 'object') return null;
+
+            const hitIndices = [];
+            for (const v of parsed.values) {
+                const key = String(v);
+                const arr = indexData[key];
+                if (Array.isArray(arr)) hitIndices.push(...arr);
+            }
+
+            const seen = new Set();
+            const rows = [];
+            for (const i of hitIndices) {
+                const n = Number(i);
+                if (!Number.isFinite(n)) continue;
+                if (n < 0 || n >= dataArray.length) continue;
+                if (seen.has(n)) continue;
+                seen.add(n);
+                rows.push(dataArray[n]);
+            }
+
+            return { indexName, rows };
+        }
+
         async function fetchBackupSnapshot({ scope, database }) {
             const url = scope === 'db'
                 ? `/api/backup?scope=db&database=${encodeURIComponent(database)}`
@@ -1650,7 +1791,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             // 填充值
             for (let i = 0; i < colNames.length; i++) {
-                row[colNames[i]] = values[i];
+                const normalized = resolveColumnNameFromTable(table, colNames[i]);
+                row[normalized] = values[i];
             }
             
             // 检查主键唯一性
@@ -1658,6 +1800,19 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (col.primaryKey && row[col.name] !== undefined) {
                     const exists = tableDataArray.some(r => r[col.name] === row[col.name]);
                     if (exists) throw new Error(`主键 '${col.name}' 值 '${row[col.name]}' 已存在`);
+                }
+            }
+
+            // 检查唯一索引
+            if (table.indexes) {
+                for (const [idxName, idx] of Object.entries(table.indexes || {})) {
+                    if (!idx || !idx.unique) continue;
+                    const cols = Array.isArray(idx.columns) ? idx.columns : [];
+                    if (cols.length === 0) continue;
+                    const valuesNow = cols.map(c => getRowValueCaseInsensitive(row, c));
+                    if (valuesNow.some(v => v === null || v === undefined)) continue;
+                    const dup = tableDataArray.some(r => cols.every((c, i) => getRowValueCaseInsensitive(r, c) == valuesNow[i]));
+                    if (dup) throw new Error(`唯一索引约束失败: ${idxName}(${cols.join(', ')}) 已存在相同值`);
                 }
             }
             
@@ -1678,6 +1833,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             tableDataArray.push(row);
 
+            if (table.indexes && Object.keys(table.indexes).length > 0) {
+                rebuildIndexDataForTable(table, tableDataArray);
+            }
+
             if (useTableStorage) {
                 if (inTransaction) {
                     transactionModifiedTables.add(tableKey);
@@ -1685,6 +1844,10 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                     const saveResult = await saveTableData(currentDatabase, tableName, true);
                     if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
                 }
+            }
+
+            if (table.indexes && Object.keys(table.indexes).length > 0) {
+                await persistCurrentDbMetadata();
             }
             
             return { type: 'message', message: `成功插入 1 行数据`, status: 'success' };
@@ -1762,17 +1925,28 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const tableKey = `${currentDatabase}.${tableName}`;
             const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
             let data = [...tableDataArray];
+            let usedIndexName = null;
             
             // WHERE 过滤
             if (whereClause) {
-                data = data.filter(row => evaluateWhere(row, whereClause));
+                const indexHit = tryApplyIndexWhere(table, tableDataArray, whereClause);
+                if (indexHit && indexHit.indexName) {
+                    usedIndexName = indexHit.indexName;
+                    data = (indexHit.rows || []).filter(row => evaluateWhere(row, whereClause));
+                } else {
+                    data = data.filter(row => evaluateWhere(row, whereClause));
+                }
             }
             
             // 检查是否有聚合函数
             const hasAggregate = /\b(COUNT|SUM|AVG|MAX|MIN)\s*\(/i.test(selectCols);
             
             if (hasAggregate || groupBy) {
-                return executeAggregateSelect(selectCols, data, table, groupBy, havingClause, orderBy, orderDir, limit);
+                const aggRes = executeAggregateSelect(selectCols, data, table, groupBy, havingClause, orderBy, orderDir, limit);
+                if (usedIndexName && aggRes && aggRes.message) {
+                    aggRes.message += ` | 使用索引: ${usedIndexName}`;
+                }
+                return aggRes;
             }
             
             // ORDER BY 排序
@@ -1821,7 +1995,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 type: 'table',
                 columns,
                 data: projectedData,
-                message: `查询到 ${projectedData.length} 行数据${hasDistinct ? ' (已去重)' : ''}`,
+                message: `查询到 ${projectedData.length} 行数据${hasDistinct ? ' (已去重)' : ''}${usedIndexName ? ` | 使用索引: ${usedIndexName}` : ''}`,
                 meta: {
                     kind: 'select',
                     tableName,
@@ -2209,6 +2383,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
 
             const tableKey = `${currentDatabase}.${tableName}`;
             const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
+            const snapshot = tableDataArray ? JSON.parse(JSON.stringify(tableDataArray)) : null;
             
             // 解析 SET (保存表达式字符串，每行单独计算)
             const updateExprs = [];
@@ -2216,7 +2391,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             for (const part of setParts) {
                 const eqIdx = part.indexOf('=');
                 if (eqIdx === -1) throw new Error('SET 子句语法错误');
-                const col = part.substring(0, eqIdx).trim();
+                const col = resolveColumnNameFromTable(table, part.substring(0, eqIdx).trim());
                 const expr = part.substring(eqIdx + 1).trim();
                 updateExprs.push({ col, expr });
             }
@@ -2226,7 +2401,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 // 检查是否是算术表达式 (如 age+1, price*0.9)
                 const arithMatch = expr.match(/^(\w+)\s*([+\-*\/])\s*(\d+\.?\d*)$/);
                 if (arithMatch) {
-                    const colName = arithMatch[1];
+                    const colName = resolveColumnNameFromTable(table, arithMatch[1]);
                     const op = arithMatch[2];
                     const num = parseFloat(arithMatch[3]);
                     const colVal = parseFloat(row[colName]) || 0;
@@ -2240,26 +2415,47 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 return parseValue(expr);
             }
             
-            let count = 0;
-            for (const row of tableDataArray) {
-                if (!whereClause || evaluateWhere(row, whereClause)) {
-                    for (const { col, expr } of updateExprs) {
-                        row[col] = evalExpr(expr, row);
+            try {
+                let count = 0;
+                for (const row of tableDataArray) {
+                    if (!whereClause || evaluateWhere(row, whereClause)) {
+                        for (const { col, expr } of updateExprs) {
+                            row[col] = evalExpr(expr, row);
+                        }
+                        count++;
                     }
-                    count++;
                 }
-            }
 
-            if (useTableStorage && count > 0) {
-                if (inTransaction) {
-                    transactionModifiedTables.add(tableKey);
-                } else {
-                    const saveResult = await saveTableData(currentDatabase, tableName, true);
-                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                if (count > 0 && table.indexes && Object.keys(table.indexes).length > 0) {
+                    ensurePrimaryKeyUnique(table, tableDataArray);
+                    ensureUniqueIndexes(table, tableDataArray);
+                    rebuildIndexDataForTable(table, tableDataArray);
                 }
+
+                if (useTableStorage && count > 0) {
+                    if (inTransaction) {
+                        transactionModifiedTables.add(tableKey);
+                    } else {
+                        const saveResult = await saveTableData(currentDatabase, tableName, true);
+                        if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                    }
+                }
+
+                if (count > 0 && table.indexes && Object.keys(table.indexes).length > 0) {
+                    await persistCurrentDbMetadata();
+                }
+                
+                return { type: 'message', message: `成功更新 ${count} 行数据`, status: 'success' };
+            } catch (e) {
+                if (snapshot && Array.isArray(tableDataArray)) {
+                    tableDataArray.length = 0;
+                    tableDataArray.push(...snapshot);
+                    if (table.indexes && Object.keys(table.indexes).length > 0) {
+                        rebuildIndexDataForTable(table, tableDataArray);
+                    }
+                }
+                throw e;
             }
-            
-            return { type: 'message', message: `成功更新 ${count} 行数据`, status: 'success' };
         }
 
         async function executeDelete(sql) {
@@ -2378,6 +2574,15 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 modifiedTables.add(tableName);
             }
 
+            let indexTouched = false;
+            for (const t of modifiedTables) {
+                const tbl = databases[currentDatabase].tables[t];
+                if (!tbl || !tbl.indexes || Object.keys(tbl.indexes).length === 0) continue;
+                const dataArr = useTableStorage ? await getTableData(currentDatabase, t) : tbl.data;
+                rebuildIndexDataForTable(tbl, dataArr);
+                indexTouched = true;
+            }
+
             if (useTableStorage) {
                 if (inTransaction) {
                     for (const t of modifiedTables) {
@@ -2389,6 +2594,9 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                         if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
                     }
                 }
+            }
+            if (indexTouched) {
+                await persistCurrentDbMetadata();
             }
             return { type: 'message', message: `成功删除 ${deletedCount} 行数据`, status: 'success' };
         }
@@ -2548,7 +2756,7 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             throw new Error('ALTER TABLE 语法错误，支持: ADD, DROP, MODIFY, RENAME COLUMN, ADD/DROP FOREIGN KEY');
         }
 
-        function executeTruncate(sql) {
+        async function executeTruncate(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             const match = sql.match(/TRUNCATE\s+(?:TABLE\s+)?(\w+)/i);
@@ -2557,15 +2765,34 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             const tableName = match[1];
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
-            
-            const count = table.data.length;
-            table.data = [];
-            
+            const tableKey = `${currentDatabase}.${tableName}`;
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
+
+            const count = tableDataArray.length;
+            tableDataArray.length = 0;
+
+            if (table.indexes && Object.keys(table.indexes).length > 0) {
+                rebuildIndexDataForTable(table, tableDataArray);
+            }
+
+            if (useTableStorage) {
+                if (inTransaction) {
+                    transactionModifiedTables.add(tableKey);
+                } else {
+                    const saveResult = await saveTableData(currentDatabase, tableName, true);
+                    if (saveResult && !saveResult.ok) throw new Error(saveResult.errorMessage || '保存失败');
+                }
+            }
+
+            if (table.indexes && Object.keys(table.indexes).length > 0) {
+                await persistCurrentDbMetadata();
+            }
+
             return { type: 'message', message: `成功清空表 '${tableName}'，删除 ${count} 行`, status: 'success' };
         }
 
         // ==================== 索引功能 ====================
-        function executeCreateIndex(sql) {
+        async function executeCreateIndex(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             // CREATE [UNIQUE] INDEX idx_name ON table_name (col1, col2, ...)
@@ -2579,9 +2806,12 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             
             const table = databases[currentDatabase].tables[tableName];
             if (!table) throw new Error(`表 '${tableName}' 不存在`);
+
+            const tableDataArray = useTableStorage ? await getTableData(currentDatabase, tableName) : table.data;
+            const normalizedColumns = columns.map(c => resolveColumnNameFromTable(table, c));
             
             // 验证列存在
-            for (const col of columns) {
+            for (const col of normalizedColumns) {
                 if (!table.columns.find(c => c.name.toLowerCase() === col.toLowerCase())) {
                     throw new Error(`列 '${col}' 不存在于表 '${tableName}'`);
                 }
@@ -2592,35 +2822,42 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (table.indexes[indexName]) throw new Error(`索引 '${indexName}' 已存在`);
             
             // 如果是唯一索引，检查数据唯一性
-            if (isUnique && table.data.length > 0) {
+            if (isUnique && tableDataArray.length > 0) {
                 const seen = new Set();
-                for (const row of table.data) {
-                    const key = columns.map(c => row[c]).join('|');
-                    if (seen.has(key)) throw new Error(`无法创建唯一索引：列 (${columns.join(', ')}) 存在重复值`);
+                for (const row of tableDataArray) {
+                    const values = normalizedColumns.map(c => getRowValueCaseInsensitive(row, c));
+                    if (values.some(v => v === null || v === undefined)) continue;
+                    const key = values.map(v => String(v)).join('|');
+                    if (seen.has(key)) throw new Error(`无法创建唯一索引：列 (${normalizedColumns.join(', ')}) 存在重复值`);
                     seen.add(key);
                 }
             }
             
             // 创建索引（构建B树模拟结构）
             const indexData = {};
-            table.data.forEach((row, idx) => {
-                const key = columns.map(c => row[c]).join('|');
+            tableDataArray.forEach((row, idx) => {
+                const key = normalizedColumns.map(c => {
+                    const v = getRowValueCaseInsensitive(row, c);
+                    return v === undefined || v === null ? '' : String(v);
+                }).join('|');
                 if (!indexData[key]) indexData[key] = [];
                 indexData[key].push(idx);
             });
             
             table.indexes[indexName] = {
                 name: indexName,
-                columns: columns,
+                columns: normalizedColumns,
                 unique: isUnique,
                 data: indexData,
                 createdAt: new Date().toISOString()
             };
+
+            await persistCurrentDbMetadata();
             
-            return { type: 'message', message: `成功创建${isUnique ? '唯一' : ''}索引 '${indexName}' ON ${tableName}(${columns.join(', ')})`, status: 'success' };
+            return { type: 'message', message: `成功创建${isUnique ? '唯一' : ''}索引 '${indexName}' ON ${tableName}(${normalizedColumns.join(', ')})`, status: 'success' };
         }
         
-        function executeDropIndex(sql) {
+        async function executeDropIndex(sql) {
             if (!currentDatabase) throw new Error('请先选择数据库');
             
             // DROP INDEX idx_name ON table_name
@@ -2635,6 +2872,8 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             if (!table.indexes || !table.indexes[indexName]) throw new Error(`索引 '${indexName}' 不存在`);
             
             delete table.indexes[indexName];
+
+            await persistCurrentDbMetadata();
             
             return { type: 'message', message: `成功删除索引 '${indexName}'`, status: 'success' };
         }

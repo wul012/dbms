@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "tables": {
+      "employees": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "dept",
+            "type": "VARCHAR",
+            "size": 20,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "age",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {
+          "idx_employees_dept": {
+            "name": "idx_employees_dept",
+            "columns": [
+              "dept"
+            ],
+            "unique": false,
+            "data": {
+              "R&D": [
+                0,
+                1
+              ],
+              "HR": [
+                2,
+                4
+              ],
+              "Sales": [
+                3
+              ]
+            },
+            "createdAt": "2026-01-15T09:43:59.604Z"
+          }
+        }
+      }
+    }
+  }
+}
