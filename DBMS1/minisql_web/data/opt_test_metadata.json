@@ -1,0 +1,134 @@
+{
+  "metadata": {
+    "tables": {
+      "t": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "t_semicolon": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "tx_test": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "v",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "parent_fk": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "name",
+            "type": "VARCHAR",
+            "size": 50,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      },
+      "child_fk": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": true,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          },
+          {
+            "name": "parent_id",
+            "type": "INT",
+            "size": null,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [
+          {
+            "column": "parent_id",
+            "refTable": "parent_fk",
+            "refColumn": "id",
+            "onDelete": "SET NULL",
+            "onUpdate": "RESTRICT"
+          }
+        ],
+        "indexes": {}
+      }
+    }
+  }
+}

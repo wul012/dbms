@@ -1139,26 +1139,28 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             // SVG层
             html += `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10">${svgContent}</svg>`;
             
-            // 表卡片
+            // 表卡片 - 浅色主题
             for (const [tableName, table] of Object.entries(tables)) {
                 const info = tableInfo[tableName];
+                const rowCount = tableData[currentDatabase + '.' + tableName]?.data?.length ?? table.data?.length ?? 0;
                 html += `
-                <div style="position:absolute;left:${info.x}px;top:${info.y}px;width:${info.width}px;background:#fff;border:2px solid #0066cc;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.12);z-index:5">
-                    <div style="background:linear-gradient(135deg,#0066cc,#004494);color:#fff;padding:10px 12px;font-weight:bold;border-radius:6px 6px 0 0;text-align:center;height:${headerHeight}px;box-sizing:border-box">
-                        📋 ${tableName} <span style="font-size:10px;opacity:0.7">(${table.data.length})</span>
+                <div style="position:absolute;left:${info.x}px;top:${info.y}px;width:${info.width}px;background:#ffffff;border:2px solid #e9d5ff;border-radius:10px;box-shadow:0 4px 20px rgba(139,92,246,0.15);z-index:5">
+                    <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6,#a855f7);color:#fff;padding:10px 12px;font-weight:600;border-radius:8px 8px 0 0;text-align:center;height:${headerHeight}px;box-sizing:border-box;letter-spacing:0.5px">
+                        📋 ${tableName} <span style="font-size:10px;opacity:0.85;font-weight:400">(${rowCount})</span>
                     </div>
-                    <div style="padding:${padding}px">
+                    <div style="padding:${padding}px;background:#faf5ff">
                         ${table.columns.map((col, idx) => {
                             const isPK = col.primaryKey;
                             const isFK = col.name.endsWith('_id') && !col.primaryKey;
-                            const relColor = isFK ? colors[relations.findIndex(r => r.fromTable === tableName && r.fromCol === col.name) % colors.length] : null;
-                            return `<div style="height:${rowHeight}px;padding:0 6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;font-size:11px;${isFK ? 'background:' + relColor + '10;' : ''}">
-                                <span>
-                                    ${isPK ? '<span style="color:#f39c12">🔑</span>' : ''}
-                                    ${isFK ? '<span style="color:' + relColor + '">🔗</span>' : ''}
-                                    <strong style="${isPK ? 'color:#f39c12' : isFK ? 'color:' + relColor : ''}">${col.name}</strong>
+                            const relIdx = relations.findIndex(r => r.fromTable === tableName && r.fromCol === col.name);
+                            const relColor = isFK && relIdx >= 0 ? colors[relIdx % colors.length] : null;
+                            return `<div style="height:${rowHeight}px;padding:0 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f3e8ff;font-size:11px;background:${isFK && relColor ? relColor + '15' : '#ffffff'}">
+                                <span style="color:#1e293b">
+                                    ${isPK ? '<span style="color:#f59e0b">🔑</span>' : ''}
+                                    ${isFK ? '<span style="color:' + (relColor || '#3b82f6') + '">🔗</span>' : ''}
+                                    <strong style="${isPK ? 'color:#b45309' : isFK && relColor ? 'color:' + relColor : 'color:#1e293b'}">${col.name}</strong>
                                 </span>
-                                <span style="color:#888;font-size:10px">${col.size ? col.type + '(' + col.size + ')' : col.type}</span>
+                                <span style="color:#64748b;font-size:10px;font-family:JetBrains Mono,monospace">${col.size ? col.type + '(' + col.size + ')' : col.type}</span>
                             </div>`;
                         }).join('')}
                     </div>
@@ -1166,28 +1168,28 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
             }
             html += `</div>`;
             
-            // 关系说明
+            // 关系说明 - 浅色主题
             if (relations.length > 0) {
-                html += `<div style="margin-top:15px;padding:12px 20px;background:#fff;border:1px solid #dee2e6;border-radius:8px">
-                    <strong style="color:#0066cc">🔗 外键关系:</strong>
-                    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px">
+                html += `<div style="margin-top:15px;padding:14px 20px;background:#ffffff;border:1px solid #e9d5ff;border-radius:10px;box-shadow:0 2px 8px rgba(139,92,246,0.1)">
+                    <strong style="color:#7c3aed">🔗 外键关系:</strong>
+                    <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:12px">
                         ${relations.map((r, i) => `
-                            <div style="display:flex;align-items:center;padding:6px 12px;background:${colors[i % colors.length]}10;border-radius:4px;font-size:12px">
-                                <span style="color:${colors[i % colors.length]};margin-right:5px">●</span>
-                                <strong>${r.fromTable}</strong>.<span style="color:${colors[i % colors.length]}">${r.fromCol}</span>
-                                <span style="margin:0 8px">→</span>
-                                <strong>${r.toTable}</strong>.<span style="color:#f39c12">${r.toCol}</span>
+                            <div style="display:flex;align-items:center;padding:8px 14px;background:${colors[i % colors.length]}10;border:1px solid ${colors[i % colors.length]}30;border-radius:6px;font-size:12px">
+                                <span style="color:${colors[i % colors.length]};margin-right:6px">●</span>
+                                <strong style="color:#1e293b">${r.fromTable}</strong><span style="color:#94a3b8">.</span><span style="color:${colors[i % colors.length]}">${r.fromCol}</span>
+                                <span style="margin:0 10px;color:#94a3b8">→</span>
+                                <strong style="color:#1e293b">${r.toTable}</strong><span style="color:#94a3b8">.</span><span style="color:#b45309">${r.toCol}</span>
                             </div>
                         `).join('')}
                     </div>
                 </div>`;
             }
             
-            // 图例
-            html += `<div style="margin-top:12px;padding:8px 15px;font-size:11px;color:#666;display:flex;gap:20px;align-items:center">
-                <span><span style="color:#f39c12">🔑</span> 主键(PK)</span>
-                <span><span style="color:#3498db">🔗</span> 外键(FK)</span>
-                <span>● ━━━▶ 外键引用</span>
+            // 图例 - 浅色主题
+            html += `<div style="margin-top:12px;padding:10px 16px;font-size:11px;color:#64748b;display:flex;gap:24px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+                <span><span style="color:#f59e0b">🔑</span> 主键(PK)</span>
+                <span><span style="color:#3b82f6">🔗</span> 外键(FK)</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="color:#ef4444">●</span> <span style="color:#94a3b8">━━━▶</span> 外键引用</span>
             </div>`;
             html += `</div>`;
             

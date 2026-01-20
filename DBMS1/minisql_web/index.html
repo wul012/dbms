@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MiniSQL - 数据库管理系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
@@ -211,12 +215,12 @@
 
     <!-- ER图模态框 -->
     <div id="er-modal" class="modal-overlay">
-        <div class="modal" style="max-width:95vw;width:900px;height:85vh;display:flex;flex-direction:column;padding:0">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #dee2e6;background:#f8f9fa;border-radius:10px 10px 0 0">
-                <h3 style="margin:0;color:#0066cc">📊 数据库 ER 图</h3>
-                <button class="btn btn-sm btn-secondary" onclick="closeModal('er-modal')" style="font-size:16px;padding:4px 10px">✕</button>
+        <div class="modal" style="max-width:95vw;width:950px;height:85vh;display:flex;flex-direction:column;padding:0;background:var(--bg-card)">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-bottom:1px solid var(--border-color);background:linear-gradient(180deg,#faf5ff,#f5f3ff);border-radius:var(--radius-xl) var(--radius-xl) 0 0">
+                <h3 style="margin:0;color:var(--text-accent);font-size:17px;font-weight:600">📊 数据库 ER 图</h3>
+                <button class="btn btn-sm btn-secondary" onclick="closeModal('er-modal')" style="font-size:18px;padding:4px 12px;border-radius:6px">✕</button>
             </div>
-            <div id="er-container" style="flex:1;overflow:auto;padding:20px;background:#f8f9fa"></div>
+            <div id="er-container" style="flex:1;overflow:auto;padding:24px;background:linear-gradient(180deg,#faf5ff,#f5f3ff)"></div>
         </div>
     </div>
 
