@@ -148,6 +148,13 @@
                     checked.add(tableKey);
 
                     const localVer = (tableVersions[tableKey] ?? null);
+                    
+                    // 如果本地没有版本号（新建表或首次访问），先加载数据获取版本
+                    if (localVer === null) {
+                        await loadTableData(dbName, tableName);
+                        continue; // 加载后版本已同步，跳过检查
+                    }
+                    
                     let serverVer = null;
 
                     try {
@@ -160,7 +167,11 @@
                     }
 
                     if (serverVer !== localVer) {
-                        throw new Error('数据已过期：检测到其他窗口已提交更新，请刷新页面后再查询');
+                        // 版本不匹配时，重新加载数据而不是报错
+                        console.log(`⚠️ 版本不匹配 ${tableKey}: 本地=${localVer}, 服务器=${serverVer}, 正在刷新...`);
+                        delete tableData[tableKey];
+                        delete tableVersions[tableKey];
+                        await loadTableData(dbName, tableName);
                     }
                 }
             }
@@ -1563,6 +1574,15 @@ COMMIT;  -- 或 ROLLBACK; 撤销更改`,
                 if (!saveResult || !saveResult.ok) {
                     delete databases[currentDatabase].tables[tableName];
                     throw new Error(saveResult && saveResult.errorMessage ? saveResult.errorMessage : '保存元数据失败');
+                }
+                
+                // 初始化表数据文件（空数组），确保版本号同步
+                const tableKey = `${currentDatabase}.${tableName}`;
+                tableData[tableKey] = { data: [], version: new Date().toISOString() };
+                tableVersions[tableKey] = tableData[tableKey].version;
+                const tableResult = await saveTableData(currentDatabase, tableName, false);
+                if (!tableResult || !tableResult.ok) {
+                    console.warn(`表数据初始化保存失败: ${tableKey}`);
                 }
             }
 
