@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "tables": {
+      "1": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "size": 6,
+            "primaryKey": false,
+            "autoIncrement": false,
+            "notNull": false,
+            "default": null
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": {}
+      }
+    }
+  }
+}
